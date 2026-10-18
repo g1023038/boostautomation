@@ -1,0 +1,6 @@
+# Local run artifacts from scripts/boost_actions.py, run_purchase_test.py,
+# and explore_app.py -- never meant to be committed, just diagnostic output
+# from running them locally.
+explore_*.png
+run_log*.txt
+result.json

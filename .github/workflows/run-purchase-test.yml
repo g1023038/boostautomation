@@ -1,0 +1,43 @@
+name: Run Booost Buy purchase test
+
+on:
+  workflow_dispatch:
+    inputs:
+      product_name:
+        description: "Exact catalog name, e.g. 'Plato Coffee' or 'KFC_Display'"
+        required: true
+      product_amount:
+        description: "Only for variable-denomination products"
+        required: false
+      payment_method:
+        description: "points | card | split"
+        required: true
+        default: points
+      boosts_amount:
+        description: "Only for payment_method=split"
+        required: false
+
+jobs:
+  purchase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install Appium-Python-Client selenium
+      - run: python scripts/run_purchase_test.py
+        env:
+          LT_USERNAME: ${{ secrets.LAMBDATEST_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LAMBDATEST_ACCESS_KEY }}
+          TEST_ID_NUMBER: ${{ secrets.TEST_ID_NUMBER }}
+          TEST_PHONE_LOCAL: ${{ secrets.TEST_PHONE_LOCAL }}
+          TEST_OTP: ${{ secrets.TEST_OTP }}
+          PRODUCT_NAME: ${{ inputs.product_name }}
+          PRODUCT_AMOUNT: ${{ inputs.product_amount }}
+          PAYMENT_METHOD: ${{ inputs.payment_method }}
+          BOOSTS_AMOUNT: ${{ inputs.boosts_amount }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: purchase-result
+          path: result.json

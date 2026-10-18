@@ -1,0 +1,28 @@
+{
+  "_source": "Confluence/Jira via Rovo: LRQA-6883 (Vouchers & VAS test plan), LRQA-6884, LRQA-7027, LRQA-7031",
+  "payment_gateway": "Peach Payments sandbox (pro_F5JlYUU0xVc1vdPex580)",
+  "test_cards": {
+    "success": { "number": "4200000000000091", "expiry": "12/28", "cvv": "123" },
+    "decline": { "number": "4012001037461114", "expiry": "12/28", "cvv": "123" }
+  },
+  "payment_methods_to_test": [
+    "full_card",
+    "full_boost_points",
+    "split_tender_points_and_card",
+    "declined_insufficient_funds",
+    "double_tap_idempotency"
+  ],
+  "vas": {
+    "electricity_meter_numbers": ["04123456789", "14123456789"],
+    "airtime_data_test_msisdn": "0821234567"
+  },
+  "aggregators": {
+    "retail_dining_vouchers": "YOYO",
+    "entertainment_gaming_vouchers": "Stellr",
+    "airtime_data_and_electricity": "Blue Label"
+  },
+  "notes": [
+    "Never use real bank cards in the PPE build.",
+    "For purchase exploration: always pick the smallest-denomination item available, and capture the Boosts/points balance immediately before and after the purchase to confirm it updates correctly."
+  ]
+}

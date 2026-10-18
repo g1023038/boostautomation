@@ -11,14 +11,85 @@ API directly.
 ## Layout
 
 ```
-.github/workflows/      the 4 pipeline workflows (see below)
-scripts/                shared API clients + the 4 pipeline entrypoints
+.github/workflows/      the 4 pipeline workflows + run-purchase-test.yml (see below)
+scripts/                shared API clients + the pipeline entrypoints
+scripts/boost_actions.py       composable Booost Buy actions (login, get_balance, buy, add card...) -- primary
+scripts/run_purchase_test.py   earlier single-flow purchase test, superseded by boost_actions.py
 api-tests/               generated + hand-written API tests (pytest)
 app-tests/               generated + hand-written UI/app tests (Playwright, via LambdaTest)
 performance/            JMeter .jmx plans (not wired into a workflow yet)
-testdata/reference/     versioned, non-sensitive test fixtures
+testdata/reference/     versioned, non-sensitive test fixtures (incl. PPE payment/voucher test data)
 rovo-handoff/           exact configs to hand to Rovo or your Jira admin
 ```
+
+## Booost app (com.sanlam.boost.ppe) -- what's been verified live
+
+Explored and tested directly against the real app on a LambdaTest Android
+device (`lt://APP10160362051791552008064620`). Login: ID number + DOB
+(auto-derived from the ID's first 6 digits) -> cellphone number -> 6-digit
+OTP (any value accepted in PPE) -> location/notification permission screens.
+No resource-ids anywhere -- it's a Compose app without `testTag`s set, so
+every locator here is by visible text. Worth raising with the dev team:
+automation would be far less fragile with `testTag`s on key elements.
+
+Booost Buy (More > Booost Buy > Vouchers) has **no shared cart** -- every
+product (fixed, like Plato Coffee, or variable-amount, like KFC_Display) is
+an independent "Buy now" -> checkout -> pay. All 3 payment methods verified
+end-to-end, including balance deltas and voucher provisioning (wiCode + QR
+on the Order details screen, and the purchased item showing up under
+Vouchers > Your vouchers):
+
+| Method | How | Verified |
+|---|---|---|
+| Full Boost Points | default checkout state | yes, repeatedly, balance deltas all correct |
+| Full card (saved card) | edit the "Pay with Booosts" amount box to 0 | yes -- routes to a Peach Payments modal (saved test card ****0042) then a 3DS "Demo Bank" mock challenge, Approve by default |
+| Full card (new, not-yet-saved card) | tap "Add new payment method" in the Peach modal | yes -- **4 fields, not 3**: Card Number, Expiry (single "MM / YY" field), CVC, and **Card Holder Name**, which Peach requires -- a first attempt that only filled 3 fields got rejected with "Card Holder's name required" |
+| Split (points + card) | edit the amount box to a partial value | yes -- remainder correctly auto-calculated, same Peach/3DS flow for the card portion |
+| Buy without completing | stop after the Peach modal appears, never submit | yes -- no order created, no balance change, confirmed clean |
+| Balance check only, no purchase | `STEPS=login,get_balance` | yes -- for "get me the balance for user X" without buying anything |
+
+**One confirmed bug, recurring**: the Boosts balance badge on the "Purchase
+complete" screen can show the *stale pre-purchase* value instead of the
+updated one -- now seen on 4 of 10 purchases across both test scripts,
+frequent enough to call a real pattern, not a one-off. The deduction itself
+is always correct (confirmed by re-reading the balance in a fresh session
+or a later screen); it's a display refresh timing issue specific to that
+confirmation screen. Worth a ticket: assert the badge updates within a few
+seconds after "Purchase complete" renders, not that it's instant or
+synchronous with that message.
+
+## scripts/boost_actions.py -- composable actions, not one fixed flow
+
+Each action is a small function (`login`, `get_balance`, `goto_product`,
+`start_checkout`, `set_payment`, `checkout`, `voucher_details`) that can run
+standalone or be chained via the `STEPS` env var -- built this way
+specifically so a request like "just get me the balance for this user"
+doesn't have to run a purchase to get it, and "buy but don't complete the
+purchase" is a first-class option (`COMPLETE_PURCHASE=false`), not a hack.
+
+Every action records **everything visible on screen** (not just the fields
+it cares about) into `state["screens"]`, flushed to `result.json` after
+every single screen -- not just at the end -- so a crash mid-run still
+leaves a diagnosable trail of exactly what the app showed at each step.
+This is how the cardholder-name bug above actually got found: the crash
+left the unfilled form's full text on disk to read back.
+
+| Option | Values | Notes |
+|---|---|---|
+| `STEPS` | comma-separated action names | default: full purchase chain |
+| `PAYMENT_METHOD` | `points` \| `card_saved` \| `card_new` \| `split` | |
+| `BOOSTS_AMOUNT` | number | only for `split` |
+| `CARD_NUMBER`, `CARD_EXP`, `CARD_CVC`, `CARD_HOLDER_NAME` | | only for `card_new` |
+| `COMPLETE_PURCHASE` | `true` \| `false` | `false` stops right after the Peach modal/card form, before submitting |
+
+`run-purchase-test.yml` currently wraps the older `run_purchase_test.py` --
+worth repointing it at `boost_actions.py` once the `STEPS`-based interface
+is the one being relied on long-term. See
+`rovo-handoff/chat-triggered-execution.md` for the design to trigger this
+from a Rovo chat conversation ("buy 1 Plato Coffee, pay with points", "get
+the balance for user X", "add a new card and pay but don't confirm") rather
+than the GitHub UI -- the `STEPS`/option model above is exactly what a
+Forge action would need to assemble from parsed chat intent.
 
 ## Pipeline flow
 
@@ -36,7 +107,8 @@ rovo-handoff/           exact configs to hand to Rovo or your Jira admin
 | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_PROJECT_KEY` | all Jira/Confluence calls (service account -- see `rovo-handoff/service-account-setup.md`) |
 | `XRAY_CLIENT_ID`, `XRAY_CLIENT_SECRET` | Xray Cloud API auth |
 | `ANTHROPIC_API_KEY` | test case + script generation (pinned model, see `scripts/llm_client.py`) |
-| `LAMBDATEST_USERNAME`, `LAMBDATEST_ACCESS_KEY` | app-tests execution |
+| `LAMBDATEST_USERNAME`, `LAMBDATEST_ACCESS_KEY` | app-tests execution, `run_purchase_test.py` |
+| `TEST_ID_NUMBER`, `TEST_PHONE_LOCAL`, `TEST_OTP` | login for `run_purchase_test.py` -- a PPE test identity, not a real customer |
 | `CONFLUENCE_SPACE_KEY` | results page target |
 | `GITHUB_TOKEN` | automatic, already provided per workflow run -- just needs `permissions: contents: write, pull-requests: write`, already set in `generate-script.yml` |
 
