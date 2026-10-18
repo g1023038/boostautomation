@@ -1,0 +1,73 @@
+name: Execute tests and publish results
+
+# NOTE: how test_plan_key/test_exec_key get from the approved PR through to this
+# workflow is not wired up yet -- see "Open design gaps" in README.md.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+        working-directory: api-tests
+      - run: pytest --junitxml=../reports/api-results.xml
+        working-directory: api-tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-results
+          path: reports/api-results.xml
+
+  app-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+        working-directory: app-tests
+      - run: npx playwright test --reporter=junit
+        working-directory: app-tests
+        env:
+          LT_USERNAME: ${{ secrets.LAMBDATEST_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LAMBDATEST_ACCESS_KEY }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-results
+          path: app-tests/results.xml
+
+  publish:
+    needs: [api-tests, app-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: reports
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r scripts/requirements.txt
+      - run: python scripts/publish_results.py
+        env:
+          TEST_PLAN_KEY: ${{ vars.DEFAULT_TEST_PLAN_KEY }}
+          RUN_STATUS: ${{ (needs.api-tests.result == 'failure' || needs.app-tests.result == 'failure') && 'failure' || 'success' }}
+          JUNIT_REPORT_GLOB: reports/**/*.xml
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          XRAY_CLIENT_ID: ${{ secrets.XRAY_CLIENT_ID }}
+          XRAY_CLIENT_SECRET: ${{ secrets.XRAY_CLIENT_SECRET }}
+          CONFLUENCE_SPACE_KEY: ${{ secrets.CONFLUENCE_SPACE_KEY }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

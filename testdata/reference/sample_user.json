@@ -1,0 +1,8 @@
+{
+  "staging": {
+    "standard_user": {
+      "username": "test.user.01@example.com",
+      "password_ref": "STAGING_STANDARD_USER_PASSWORD"
+    }
+  }
+}
