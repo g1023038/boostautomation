@@ -46,35 +46,43 @@ workflow's `workflow_dispatch` inputs mirror exactly)
 
 ```yaml
 inputs:
+  steps:
+    description: "Comma-separated action chain, e.g. 'login,get_balance' for a balance-only check"
+    default: "login,goto_product,start_checkout,set_payment,checkout,voucher_details"
   product_name:
     description: "Exact catalog name, e.g. 'Plato Coffee' or 'KFC_Display'"
-    required: true
   product_amount:
     description: "Only for variable-denomination products (e.g. KFC_Display)"
-    required: false
   payment_method:
-    description: "points | card | split"
-    required: true
+    description: "points | card_saved | card_new | split"
     default: points
   boosts_amount:
     description: "Only for payment_method=split -- the Booosts portion"
-    required: false
+  card_number:
+    description: "Only for payment_method=card_new"
+  card_exp:
+    description: "Only for payment_method=card_new, e.g. 12/28"
+  complete_purchase:
+    description: "false stops at the payment screen without submitting -- 'buy but don't complete'"
+    default: "true"
 ```
 
-This is a direct mirror of the env vars `run_purchase_test.py` already
-takes -- no translation layer needed beyond Rovo's own intent parsing.
+This is a direct mirror of the env vars `mobile-tests/boost_actions.py`
+already takes -- no translation layer needed beyond Rovo's own intent
+parsing turning a sentence into this option set, including picking which
+`steps` to run at all (a balance check never needs the purchase steps).
 
 ## What's real vs. what's still a design
 
-- **Real, verified today**: `scripts/run_purchase_test.py` runs standalone
-  with these exact env vars and produces `result.json` (verified for
-  `payment_method=points`; `card` and `split` verified manually via
-  `explore_app.py` and share the same code path).
-- **Not yet built**: the GitHub Actions workflow wrapping this script with
-  `workflow_dispatch` inputs (straightforward -- same pattern as the other
-  4 workflows in `.github/workflows/`), and the Forge `rovo:action` itself
-  (real development work: a Forge app, its manifest, the `fetch()` call,
-  and whatever credential storage Forge provides for the GitHub PAT).
+- **Real, verified today**: `mobile-tests/boost_actions.py` runs standalone
+  with these exact env vars and produces `result.json` -- every payment
+  method (points, saved card, newly-added card, split), buy-without-
+  completing, and balance-only checks are all verified live, and the same
+  action functions are reused as real pytest tests in `mobile-tests/`.
+- **Not yet built**: the Forge `rovo:action` itself (real development work:
+  a Forge app, its manifest, the `fetch()` call, and whatever credential
+  storage Forge provides for the GitHub PAT). `run-purchase-test.yml`
+  already exists and takes exactly this input shape today.
 - **Open question worth asking Rovo directly**: given a sentence like "buy
   a R50 KFC voucher, split half Boosts half card", can a custom Rovo agent
   reliably extract structured parameters (product name match against a

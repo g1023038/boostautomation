@@ -11,7 +11,10 @@ project:
      constant at the top of `scripts/generate_script.py` -- it's currently a
      guess and will not work until corrected.
 
-2. **Automation type** (select list: `api` / `ui` / `perf`)
+2. **Automation type** (select list: `api` / `ui` / `mobile` / `perf`)
+   - `mobile` routes to `mobile-tests/`, built on Appium + `boost_actions.py`
+     against the real Booost Android app; `ui` is the (currently unused)
+     Playwright/web path.
    - Lets Jira Automation Rule 3 (see `jira-automation-rules.md`) know which
      codegen path to dispatch to, instead of the hardcoded `"api"` placeholder
      currently in that rule's request body.

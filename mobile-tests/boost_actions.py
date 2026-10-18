@@ -295,6 +295,18 @@ def action_voucher_details(driver, state):
         state["wicode"] = next((t for t in state["screens"][-1]["texts"] if t.isdigit() and len(t) >= 6), None)
 
 
+def action_recheck_balance(driver, state):
+    """Navigate away from the Purchase complete screen and re-read the
+    balance. Works around a confirmed app bug: that screen's own balance
+    badge can show the stale pre-purchase value for a few seconds (see
+    README) -- so asserting the delta on it directly is flaky by nature of
+    the app, not the test. Re-reading after navigating elsewhere is stable."""
+    if tap_by_text(driver, "Booost Buy", timeout=5, contains=False):
+        time.sleep(3)
+        record_screen(state, driver, "balance_recheck")
+        state["balance_settled"] = extract_balance(driver)
+
+
 ACTIONS = {
     "login": action_login,
     "get_balance": action_get_balance,
@@ -303,6 +315,7 @@ ACTIONS = {
     "set_payment": action_set_payment,
     "checkout": action_checkout,
     "voucher_details": action_voucher_details,
+    "recheck_balance": action_recheck_balance,
 }
 
 

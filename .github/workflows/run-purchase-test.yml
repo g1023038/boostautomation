@@ -1,21 +1,35 @@
-name: Run Booost Buy purchase test
+name: Run Booost Buy purchase action chain
 
 on:
   workflow_dispatch:
     inputs:
+      steps:
+        description: "Comma-separated action chain, e.g. login,get_balance or the default full purchase"
+        required: false
+        default: "login,goto_product,start_checkout,set_payment,checkout,voucher_details"
       product_name:
         description: "Exact catalog name, e.g. 'Plato Coffee' or 'KFC_Display'"
-        required: true
+        required: false
       product_amount:
         description: "Only for variable-denomination products"
         required: false
       payment_method:
-        description: "points | card | split"
-        required: true
+        description: "points | card_saved | card_new | split"
+        required: false
         default: points
       boosts_amount:
         description: "Only for payment_method=split"
         required: false
+      card_number:
+        description: "Only for payment_method=card_new"
+        required: false
+      card_exp:
+        description: "Only for payment_method=card_new, e.g. 12/28"
+        required: false
+      complete_purchase:
+        description: "Set to false to stop at the payment screen without submitting"
+        required: false
+        default: "true"
 
 jobs:
   purchase:
@@ -25,19 +39,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install Appium-Python-Client selenium
-      - run: python scripts/run_purchase_test.py
+      - run: pip install -r requirements.txt
+        working-directory: mobile-tests
+      - run: python boost_actions.py
+        working-directory: mobile-tests
         env:
           LT_USERNAME: ${{ secrets.LAMBDATEST_USERNAME }}
           LT_ACCESS_KEY: ${{ secrets.LAMBDATEST_ACCESS_KEY }}
           TEST_ID_NUMBER: ${{ secrets.TEST_ID_NUMBER }}
           TEST_PHONE_LOCAL: ${{ secrets.TEST_PHONE_LOCAL }}
           TEST_OTP: ${{ secrets.TEST_OTP }}
+          STEPS: ${{ inputs.steps }}
           PRODUCT_NAME: ${{ inputs.product_name }}
           PRODUCT_AMOUNT: ${{ inputs.product_amount }}
           PAYMENT_METHOD: ${{ inputs.payment_method }}
           BOOSTS_AMOUNT: ${{ inputs.boosts_amount }}
+          CARD_NUMBER: ${{ inputs.card_number }}
+          CARD_EXP: ${{ inputs.card_exp }}
+          COMPLETE_PURCHASE: ${{ inputs.complete_purchase }}
       - uses: actions/upload-artifact@v4
         with:
           name: purchase-result
-          path: result.json
+          path: mobile-tests/result.json

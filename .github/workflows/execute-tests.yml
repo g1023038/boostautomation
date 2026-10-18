@@ -45,8 +45,30 @@ jobs:
           name: app-results
           path: app-tests/results.xml
 
+  mobile-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+        working-directory: mobile-tests
+      - run: pytest --junitxml=../reports/mobile-results.xml
+        working-directory: mobile-tests
+        env:
+          LT_USERNAME: ${{ secrets.LAMBDATEST_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LAMBDATEST_ACCESS_KEY }}
+          TEST_ID_NUMBER: ${{ secrets.TEST_ID_NUMBER }}
+          TEST_PHONE_LOCAL: ${{ secrets.TEST_PHONE_LOCAL }}
+          TEST_OTP: ${{ secrets.TEST_OTP }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile-results
+          path: reports/mobile-results.xml
+
   publish:
-    needs: [api-tests, app-tests]
+    needs: [api-tests, app-tests, mobile-tests]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -61,7 +83,7 @@ jobs:
       - run: python scripts/publish_results.py
         env:
           TEST_PLAN_KEY: ${{ vars.DEFAULT_TEST_PLAN_KEY }}
-          RUN_STATUS: ${{ (needs.api-tests.result == 'failure' || needs.app-tests.result == 'failure') && 'failure' || 'success' }}
+          RUN_STATUS: ${{ (needs.api-tests.result == 'failure' || needs.app-tests.result == 'failure' || needs.mobile-tests.result == 'failure') && 'failure' || 'success' }}
           JUNIT_REPORT_GLOB: reports/**/*.xml
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}

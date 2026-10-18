@@ -11,12 +11,12 @@ API directly.
 ## Layout
 
 ```
-.github/workflows/      the 4 pipeline workflows + run-purchase-test.yml (see below)
-scripts/                shared API clients + the pipeline entrypoints
-scripts/boost_actions.py       composable Booost Buy actions (login, get_balance, buy, add card...) -- primary
-scripts/run_purchase_test.py   earlier single-flow purchase test, superseded by boost_actions.py
+.github/workflows/      the pipeline workflows (see below)
+scripts/                shared API clients + the Jira/Xray/Confluence pipeline entrypoints
+mobile-tests/           real pytest tests for the Booost Android app (Appium, real device)
+mobile-tests/boost_actions.py   composable actions the tests (and codegen) are built on
 api-tests/               generated + hand-written API tests (pytest)
-app-tests/               generated + hand-written UI/app tests (Playwright, via LambdaTest)
+app-tests/               generated + hand-written web UI tests (Playwright, via LambdaTest)
 performance/            JMeter .jmx plans (not wired into a workflow yet)
 testdata/reference/     versioned, non-sensitive test fixtures (incl. PPE payment/voucher test data)
 rovo-handoff/           exact configs to hand to Rovo or your Jira admin
@@ -58,7 +58,34 @@ confirmation screen. Worth a ticket: assert the badge updates within a few
 seconds after "Purchase complete" renders, not that it's instant or
 synchronous with that message.
 
-## scripts/boost_actions.py -- composable actions, not one fixed flow
+## No developer needed to write these tests -- the agent does, on this base
+
+`mobile-tests/boost_actions.py` isn't just a diagnostic tool -- it's the base
+library the codegen step (`scripts/generate_script.py`, `mobile` test type)
+is explicitly instructed to build on. When a new Xray test case for this app
+is approved and has no script yet, the agent writes a pytest test that
+imports the existing `action_*` functions (`action_login`,
+`action_goto_product`, `action_set_payment`, ...) and composes them for the
+new scenario -- it does not re-derive locators, login, or payment handling
+from scratch, and it already knows about the cardholder-name requirement and
+the stale-balance-badge workaround below. See `MOBILE_SYSTEM_PROMPT` in
+`generate_script.py` for exactly what it's told. `mobile-tests/test_purchases.py`
+*is* what that process produces -- six tests covering every payment method,
+the no-cart-exists finding, buy-without-completing, and balance-only checks,
+all passing against the real app (one test-data caveat below).
+
+**Test-data caveat, not a code bug**: `test_buy_with_boost_points` consumes
+the shared test account's Boosts balance every time it runs (the other
+payment methods don't touch it) -- it was drained from 108.25 to single
+digits over one day of exploration plus these tests, with no known top-up
+mechanism yet. The test checks `balance_before` and skips itself cleanly
+rather than false-failing when there isn't enough left to cover one
+purchase. This is the stateful test-data problem flagged early on in
+`testdata/reference/` finally showing up in practice -- worth prioritizing
+a real fix (a seeded points balance per CI run, or a top-up endpoint) over
+leaving the skip in place long-term.
+
+## mobile-tests/boost_actions.py -- composable actions, not one fixed flow
 
 Each action is a small function (`login`, `get_balance`, `goto_product`,
 `start_checkout`, `set_payment`, `checkout`, `voucher_details`) that can run
@@ -82,14 +109,14 @@ left the unfilled form's full text on disk to read back.
 | `CARD_NUMBER`, `CARD_EXP`, `CARD_CVC`, `CARD_HOLDER_NAME` | | only for `card_new` |
 | `COMPLETE_PURCHASE` | `true` \| `false` | `false` stops right after the Peach modal/card form, before submitting |
 
-`run-purchase-test.yml` currently wraps the older `run_purchase_test.py` --
-worth repointing it at `boost_actions.py` once the `STEPS`-based interface
-is the one being relied on long-term. See
-`rovo-handoff/chat-triggered-execution.md` for the design to trigger this
-from a Rovo chat conversation ("buy 1 Plato Coffee, pay with points", "get
-the balance for user X", "add a new card and pay but don't confirm") rather
-than the GitHub UI -- the `STEPS`/option model above is exactly what a
-Forge action would need to assemble from parsed chat intent.
+`run-purchase-test.yml` wraps this directly for ad-hoc/chat-triggered runs
+with arbitrary options; `execute-tests.yml`'s `mobile-tests` job runs the
+full `pytest` suite in `mobile-tests/` on every push to `main`. See
+`rovo-handoff/chat-triggered-execution.md` for the design to trigger a
+one-off run from a Rovo chat conversation ("buy 1 Plato Coffee, pay with
+points", "get the balance for user X", "add a new card and pay but don't
+confirm") rather than the GitHub UI -- the `STEPS`/option model above is
+exactly what a Forge action would need to assemble from parsed chat intent.
 
 ## Pipeline flow
 
@@ -97,8 +124,9 @@ Forge action would need to assemble from parsed chat intent.
 |---|---|---|
 | Test Plan → Approved (Jira Automation Rule 1) | `generate-test-cases.yml` | Calls a pinned LLM, drafts Gherkin, creates a draft Jira Test issue |
 | Draft Test → Approved (Jira Automation Rule 2) | `post-to-xray.yml` | Tags the draft with its own issue key, posts to Xray via Cucumber Feature Import -- updates the same issue in place |
-| Xray Test → Approved (Jira Automation Rule 3) | `generate-script.yml` | Calls the LLM again to write the automation script, opens a PR |
-| Push to `main` | `execute-tests.yml` | Runs API tests, runs UI/app tests on LambdaTest, publishes results to Xray + Confluence, files a Jira Bug on failure |
+| Xray Test → Approved (Jira Automation Rule 3) | `generate-script.yml` | Calls the LLM again to write the automation script (api/ui/mobile), opens a PR |
+| Push to `main` | `execute-tests.yml` | Runs API tests, web UI tests, and the `mobile-tests/` pytest suite on LambdaTest, publishes results to Xray + Confluence, files a Jira Bug on failure |
+| Manual / chat-triggered | `run-purchase-test.yml` | One-off `boost_actions.py` run with arbitrary `STEPS`/options -- see `rovo-handoff/chat-triggered-execution.md` |
 
 ## Required GitHub Secrets
 
@@ -107,8 +135,8 @@ Forge action would need to assemble from parsed chat intent.
 | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_PROJECT_KEY` | all Jira/Confluence calls (service account -- see `rovo-handoff/service-account-setup.md`) |
 | `XRAY_CLIENT_ID`, `XRAY_CLIENT_SECRET` | Xray Cloud API auth |
 | `ANTHROPIC_API_KEY` | test case + script generation (pinned model, see `scripts/llm_client.py`) |
-| `LAMBDATEST_USERNAME`, `LAMBDATEST_ACCESS_KEY` | app-tests execution, `run_purchase_test.py` |
-| `TEST_ID_NUMBER`, `TEST_PHONE_LOCAL`, `TEST_OTP` | login for `run_purchase_test.py` -- a PPE test identity, not a real customer |
+| `LAMBDATEST_USERNAME`, `LAMBDATEST_ACCESS_KEY` | app-tests execution, `mobile-tests/` |
+| `TEST_ID_NUMBER`, `TEST_PHONE_LOCAL`, `TEST_OTP` | login for `mobile-tests/` -- a PPE test identity, not a real customer |
 | `CONFLUENCE_SPACE_KEY` | results page target |
 | `GITHUB_TOKEN` | automatic, already provided per workflow run -- just needs `permissions: contents: write, pull-requests: write`, already set in `generate-script.yml` |
 
@@ -118,27 +146,32 @@ this list -- it lives only in the Jira Automation rule configs
 
 ## What's still open before this runs end to end
 
-1. **Sample script not yet provided.** `app-tests/` and `api-tests/` are
-   placeholders -- once you share an existing script, the LLM system prompts
-   in `generate_script.py` and the Playwright config get rewritten to match
-   your real locator/page-object conventions instead of generic boilerplate.
+1. **`mobile-tests/` is real now; `app-tests/` (web Playwright) is still a
+   placeholder.** It was scaffolded on a guess before we confirmed Booost is
+   a native Android app, not a web/PWA one -- keep it only if there's
+   actually a web surface to test; otherwise it's dead weight to prune.
 2. **`TEST_DATA_KEY_FIELD` in `generate_script.py` is a guessed field ID**
    (`customfield_10050`). Needs the real one once the field exists (see
    `rovo-handoff/xray-custom-fields.md`).
 3. **`test_type` in Rule 3 is hardcoded to `"api"`.** Needs the "Automation
-   type" custom field (same doc) before `ui`/`perf` cases route correctly.
-4. **`execute-tests.yml` doesn't yet know which Test Plan/Execution a given
+   type" custom field (same doc, now `api`/`ui`/`mobile`/`perf`) before
+   anything but `api` routes correctly.
+4. **The shared test account's Boosts balance needs a real top-up story**
+   (see the test-data caveat above) -- it's the one thing standing between
+   `mobile-tests/` and being fully green in CI long-term.
+5. **`execute-tests.yml` doesn't yet know which Test Plan/Execution a given
    push relates to** -- it currently publishes against
    `vars.DEFAULT_TEST_PLAN_KEY`, a single hardcoded fallback. Properly wiring
    this means threading the Test key through the PR (e.g. from the
    `auto/<test-key>` branch name `generate_script.py` already creates) into
    the execution-import step. Worth solving once the first real run proves
    the rest of the chain out.
-5. **Performance (JMeter) has no workflow yet** -- `performance/README.md`
+6. **Performance (JMeter) has no workflow yet** -- `performance/README.md`
    describes the intended path (`.jtl` → JUnit → `publish_results.py`) but
    nothing executes it.
 
 ## Next step
 
-Send the sample LambdaTest/app automation script whenever you have it --
-that's what turns `app-tests/` from a placeholder into something real.
+Decide what to do about the Boosts balance top-up (item 4 above) -- that's
+the real blocker to `mobile-tests/` running green in CI indefinitely rather
+than skipping the points test once the account runs dry.
