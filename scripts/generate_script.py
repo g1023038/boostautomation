@@ -36,6 +36,10 @@ conventions instead of inventing new locators or a new login flow:
 - Booost Buy (More > Booost Buy > Vouchers) has no shared cart -- every \
   product is its own independent Buy now -> checkout -> pay; don't write a \
   multi-item cart flow, it doesn't exist in this app.
+- Read mobile-tests/TEST_INDEX.md before writing anything. It's the coverage \
+  index: what's already implemented (don't duplicate it), known app findings \
+  worth reusing, and a gap list of what's genuinely still missing. Check the \
+  test case you're given against it first.
 
 Output ONLY the test file's code, no commentary, no markdown fences. Write \
 one or more clearly-named test_ functions, not a single monolithic test."""

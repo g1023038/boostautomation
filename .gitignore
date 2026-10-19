@@ -4,3 +4,5 @@
 explore_*.png
 run_log*.txt
 result.json
+__pycache__/
+*.pyc

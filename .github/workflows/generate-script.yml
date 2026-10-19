@@ -17,7 +17,30 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r scripts/requirements.txt
-      - run: python scripts/generate_script.py
+
+      # mobile: the test automator agent -- writes a test AND actually runs it
+      # against the real app on LambdaTest, iterating on real failures, before
+      # ever opening a PR. api/ui: generate_script.py's one-shot LLM call,
+      # since those targets don't have a runnable suite to iterate against yet.
+      - if: ${{ github.event.client_payload.test_type == 'mobile' }}
+        run: pip install -r mobile-tests/requirements.txt
+      - if: ${{ github.event.client_payload.test_type == 'mobile' }}
+        run: python scripts/test_automator_agent.py
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TEST_KEY: ${{ github.event.client_payload.test_key }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LT_USERNAME: ${{ secrets.LAMBDATEST_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LAMBDATEST_ACCESS_KEY }}
+          TEST_ID_NUMBER: ${{ secrets.TEST_ID_NUMBER }}
+          TEST_PHONE_LOCAL: ${{ secrets.TEST_PHONE_LOCAL }}
+          TEST_OTP: ${{ secrets.TEST_OTP }}
+
+      - if: ${{ github.event.client_payload.test_type != 'mobile' }}
+        run: python scripts/generate_script.py
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TEST_KEY: ${{ github.event.client_payload.test_key }}

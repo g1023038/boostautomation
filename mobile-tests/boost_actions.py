@@ -38,6 +38,7 @@ import xml.etree.ElementTree as ET
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
 from appium.webdriver.common.appiumby import AppiumBy
+from selenium.common.exceptions import StaleElementReferenceException
 
 APP_ID = "lt://APP10160362051791552008064620"
 HUB_URL = "https://mobile-hub.lambdatest.com/wd/hub"
@@ -55,6 +56,28 @@ def tap_by_text(driver, text, contains=True, timeout=15):
             return True
         time.sleep(1)
     return False
+
+
+def type_into_element(driver, xpath, text, index=0, clear=False, retries=3):
+    """find + click + (optional clear) + send_keys, re-finding the element
+    fresh on every attempt rather than reusing one handle across multiple
+    calls. A cached reference goes stale if the screen re-renders between
+    finding it and acting on it -- hit this for real on a slower-rendering
+    product detail screen (KFC's variable-amount field), so it's fixed here
+    generically rather than patched in just that one spot."""
+    last_exc = None
+    for _ in range(retries):
+        try:
+            el = driver.find_elements(AppiumBy.XPATH, xpath)[index]
+            el.click()
+            if clear:
+                el.clear()
+            el.send_keys(text)
+            return
+        except (IndexError, StaleElementReferenceException) as exc:
+            last_exc = exc
+            time.sleep(1)
+    raise RuntimeError(f"could not type into {xpath!r}[{index}] after {retries} attempts") from last_exc
 
 
 def wait_for_any_text(driver, texts, timeout=30):
@@ -162,17 +185,31 @@ def action_goto_product(driver, state):
     time.sleep(3)
     tap_by_text(driver, "Vouchers", timeout=5, contains=False)
     time.sleep(3)
-    if not tap_by_text(driver, state["product_name"], timeout=5, contains=False):
-        raise RuntimeError(f"product not found in catalog: {state['product_name']!r}")
+
+    # Search first rather than assuming the product is already visible
+    # on-screen without scrolling -- this is what lets any catalog product
+    # be found and bought generically, not just ones whose scroll position
+    # we've pre-discovered. Confirmed live: the search box filters as you
+    # type (searching a non-existent product correctly hid both real ones).
+    type_into_element(driver, "//android.widget.EditText", state["product_name"])
+    time.sleep(2)
+    driver.hide_keyboard()
+    time.sleep(1)
+
+    # Scoped to TextView specifically, not tap_by_text's generic "any
+    # element" match: after typing, the search box's own text attribute
+    # equals the product name too, so an unscoped match can grab the search
+    # box itself (a real risk, not hypothetical) instead of the result tile.
+    tiles = driver.find_elements(AppiumBy.XPATH, f"//android.widget.TextView[@text='{state['product_name']}']")
+    if not tiles:
+        raise RuntimeError(f"product not found in catalog after searching: {state['product_name']!r}")
+    tiles[0].click()
     time.sleep(3)
 
     if state.get("product_amount"):
-        fields = driver.find_elements(AppiumBy.XPATH, "//android.widget.EditText")
-        if fields:
-            fields[0].click()
-            fields[0].send_keys(str(state["product_amount"]))
-            driver.hide_keyboard()
-            time.sleep(1)
+        type_into_element(driver, "//android.widget.EditText", str(state["product_amount"]))
+        driver.hide_keyboard()
+        time.sleep(1)
     record_screen(state, driver, f"product_detail_{state['product_name']}")
 
 
@@ -188,11 +225,8 @@ def action_set_payment(driver, state):
     method = state.get("payment_method", "points")
     if method == "points":
         return
-    boxes = driver.find_elements(AppiumBy.XPATH, "//*[contains(@class,'EditText')]")
-    boosts_box = boxes[0]
-    boosts_box.click()
-    boosts_box.clear()
-    boosts_box.send_keys("0" if method in ("card_saved", "card_new") else str(state.get("boosts_amount", "0")))
+    amount = "0" if method in ("card_saved", "card_new") else str(state.get("boosts_amount", "0"))
+    type_into_element(driver, "//*[contains(@class,'EditText')]", amount, clear=True)
     time.sleep(1)
     driver.hide_keyboard()
     time.sleep(1)
@@ -208,17 +242,15 @@ def _fill_new_card(driver, state):
     # field, auto-formatted as you type), CVC, Card Holder Name -- the 4th
     # is required by Peach and was missed in an earlier version of this
     # function, which only supplied 3 values and left it blank.
-    fields = driver.find_elements(AppiumBy.XPATH, "//android.widget.EditText")
     values = [
         state.get("card_number"),
         state.get("card_exp"),
         state.get("card_cvc", "123"),
         state.get("card_holder_name", "Test User"),
     ]
-    for field, value in zip(fields, values):
+    for index, value in enumerate(values):
         if value:
-            field.click()
-            field.send_keys(str(value))
+            type_into_element(driver, "//android.widget.EditText", str(value), index=index)
             time.sleep(0.5)
     driver.hide_keyboard()
     time.sleep(1)
@@ -253,12 +285,9 @@ def action_checkout(driver, state):
         if method == "card_new":
             _fill_new_card(driver, state)
         else:
-            cvc_fields = driver.find_elements(AppiumBy.XPATH, "//*[contains(@class,'EditText')]")
-            if cvc_fields:
-                cvc_fields[-1].click()
-                cvc_fields[-1].send_keys(state.get("card_cvc", "123"))
-                driver.hide_keyboard()
-                time.sleep(1)
+            type_into_element(driver, "//*[contains(@class,'EditText')]", state.get("card_cvc", "123"), index=-1)
+            driver.hide_keyboard()
+            time.sleep(1)
 
         if not state.get("complete_purchase", True):
             state["stopped_before_payment"] = True

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "plato_coffee_card_saved",
+    "product_name": "Plato Coffee",
+    "payment_method": "card_saved",
+    "total_due": 13.00
+  },
+  {
+    "id": "plato_coffee_card_new",
+    "product_name": "Plato Coffee",
+    "payment_method": "card_new",
+    "card_number": "4200000000000091",
+    "card_exp": "12/28",
+    "total_due": 13.00
+  },
+  {
+    "id": "plato_coffee_split",
+    "product_name": "Plato Coffee",
+    "payment_method": "split",
+    "boosts_amount": "5",
+    "total_due": 13.00
+  },
+  {
+    "id": "kfc_variable_amount_card",
+    "_note": "catalog tile says 'KFC_Brand', the product detail page's own title then shows 'KFC_Display' -- a real naming inconsistency in the app, not a typo here. Navigation needs the tile name.",
+    "product_name": "KFC_Brand",
+    "product_amount": "50",
+    "payment_method": "card_saved",
+    "total_due": null
+  },
+  {
+    "id": "kfc_minimum_amount_boundary",
+    "_note": "catalog tile states the range as R10.00 - R1,000.00 -- this is the inclusive lower boundary, exactly where off-by-one validation bugs tend to live.",
+    "product_name": "KFC_Brand",
+    "product_amount": "10",
+    "payment_method": "card_saved",
+    "total_due": null
+  },
+  {
+    "id": "kfc_maximum_amount_boundary",
+    "_note": "inclusive upper boundary of the stated R10.00 - R1,000.00 range.",
+    "product_name": "KFC_Brand",
+    "product_amount": "1000",
+    "payment_method": "card_saved",
+    "total_due": null
+  }
+]

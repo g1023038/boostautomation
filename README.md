@@ -15,6 +15,7 @@ API directly.
 scripts/                shared API clients + the Jira/Xray/Confluence pipeline entrypoints
 mobile-tests/           real pytest tests for the Booost Android app (Appium, real device)
 mobile-tests/boost_actions.py   composable actions the tests (and codegen) are built on
+mobile-tests/TEST_INDEX.md      coverage index -- the agent reads this before writing anything new
 api-tests/               generated + hand-written API tests (pytest)
 app-tests/               generated + hand-written web UI tests (Playwright, via LambdaTest)
 performance/            JMeter .jmx plans (not wired into a workflow yet)
@@ -33,8 +34,13 @@ every locator here is by visible text. Worth raising with the dev team:
 automation would be far less fragile with `testTag`s on key elements.
 
 Booost Buy (More > Booost Buy > Vouchers) has **no shared cart** -- every
-product (fixed, like Plato Coffee, or variable-amount, like KFC_Display) is
-an independent "Buy now" -> checkout -> pay. All 3 payment methods verified
+product (fixed, like Plato Coffee, or variable-amount, like the KFC voucher)
+is an independent "Buy now" -> checkout -> pay. **Naming inconsistency in the
+app itself**: the catalog tile reads "KFC_Brand" but that same product's
+detail page title then reads "KFC_Display" -- navigation needs the tile
+name (`KFC_Brand`), not the detail-page name; cost a test failure before
+this was understood (see `testdata/reference/booost_buy_purchase_scenarios.json`).
+All payment methods verified
 end-to-end, including balance deltas and voucher provisioning (wiCode + QR
 on the Order details screen, and the purchased item showing up under
 Vouchers > Your vouchers):
@@ -58,6 +64,20 @@ confirmation screen. Worth a ticket: assert the badge updates within a few
 seconds after "Purchase complete" renders, not that it's instant or
 synchronous with that message.
 
+**Product lookup is search-based, not scroll-and-match.** `action_goto_product`
+types the product name into the catalog's own Search box (confirmed it
+filters live -- searching a non-existent product correctly hid both real
+ones) rather than assuming the target is already visible on-screen. This is
+what lets any catalog product be found and bought generically, including
+ones never seen before, not just the two we happened to scroll past during
+exploration. One real trap avoided: after typing, the search box's own
+`text` attribute equals the product name too, so the result tap is scoped
+specifically to `TextView` (tile labels) -- an unscoped match risks grabbing
+the search box itself instead of the result. Variable-denomination products
+(KFC) are also tested at both ends of their stated range (R10.00 min,
+R1,000.00 max), not just one arbitrary amount -- see
+`testdata/reference/booost_buy_purchase_scenarios.json`.
+
 ## No developer needed to write these tests -- the agent does, on this base
 
 `mobile-tests/boost_actions.py` isn't just a diagnostic tool -- it's the base
@@ -70,9 +90,20 @@ new scenario -- it does not re-derive locators, login, or payment handling
 from scratch, and it already knows about the cardholder-name requirement and
 the stale-balance-badge workaround below. See `MOBILE_SYSTEM_PROMPT` in
 `generate_script.py` for exactly what it's told. `mobile-tests/test_purchases.py`
-*is* what that process produces -- six tests covering every payment method,
-the no-cart-exists finding, buy-without-completing, and balance-only checks,
-all passing against the real app (one test-data caveat below).
+*is* what that process produces -- data-driven from
+`testdata/reference/booost_buy_purchase_scenarios.json` (add a row for a new
+product/payment combo instead of writing a new function), plus two dedicated
+tests for the cases that need different handling (the points-balance
+precondition, buy-without-completing). All passing against the real app
+(one test-data caveat below).
+
+`type_into_element()` in `boost_actions.py` is the hardening worth copying
+into any new action: find-and-act in two separate calls (`find_elements()`
+then `.click()`/`.send_keys()` later) can hit a `StaleElementReferenceException`
+if the screen re-renders in between -- hit this for real on the KFC
+variable-amount field, which renders slightly slower than the screens that
+had already been exercised. It re-finds fresh on every retry instead of
+reusing one cached handle.
 
 **Test-data caveat, not a code bug**: `test_buy_with_boost_points` consumes
 the shared test account's Boosts balance every time it runs (the other
