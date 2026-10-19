@@ -95,6 +95,33 @@ Both exist because "write a regression test" and "run this one specific
 thing right now with these specific parameters" are different jobs that
 happen to need the same underlying actions.
 
+## Two automation agents write to this repo -- the `automated` label is the gate
+
+There's a second system besides `scripts/test_automator_agent.py`: a
+human-triggered Rovo agent ("Test Automation Engineer") that someone can ask
+directly to automate a batch of LRQA tickets. It reads this same repo
+(`TEST_INDEX.md`, `boost_actions.py`, the same conventions) and opens PRs the
+same way. Neither agent can see the other running, so the coordination is
+entirely through one thing: **the `automated` label on the Jira ticket.**
+
+- Before writing any code, both agents check whether the ticket already has
+  the `automated` label. If it does, skip -- the other one already handled it.
+- After a PR is opened, both agents add the label themselves.
+- **This check has to happen before any code gets written, not just after a
+  PR is opened** -- setting the label only afterward doesn't prevent a race
+  if both agents happen to start on the same ticket around the same time.
+  `test_automator_agent.py`'s `main()` checks the label before even starting
+  the agent loop, for exactly this reason.
+
+One known duality, not yet reconciled, worth being aware of rather than
+surprised by: the CI pipeline (`generate-script.yml`) routes by the
+`Automation type` Jira custom field (`api`/`ui`/`mobile`/`perf`, see
+`rovo-handoff/xray-custom-fields.md`), while the Rovo agent infers test type
+from Jira *labels* (`pay-card`/`payments`/`booost`/`lf-pay` → mobile,
+`lf_cs`/`cardspace`/`api`/`gravty` → API, `ui`/`web`/`playwright` → web).
+Both should land on the same answer for a given ticket in practice, but
+they're two independent mechanisms, not one shared source of truth.
+
 ## Known traps already paid for -- don't rediscover these
 
 - Peach Payments' "Add new payment method" form has **4** fields (Card

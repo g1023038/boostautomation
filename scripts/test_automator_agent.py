@@ -81,7 +81,14 @@ giving up or claiming success it hasn't earned.
 After open_pr returns the PR URL, call update_jira_ticket with that URL --
 this is what makes the ticket traceable end to end (PR link comment,
 "automated" label, status moves to In Progress). Do this every time a PR is
-opened, not just on success."""
+opened, not just on success.
+
+Note: a separate, human-triggered Rovo agent also automates tests in this
+same Jira project, coordinating via the same "automated" label (it checks
+for the label before writing code, same as this agent does before you're
+even invoked). You won't see it in your tools, but it's why the label check
+in main() happens before you're started at all -- don't second-guess or
+bypass it."""
 
 TOOLS = [
     {
@@ -288,11 +295,25 @@ def run_agent(task_description):
 def main():
     test_key = os.environ["TEST_KEY"]
     jira = JiraClient()
-    issue = jira.get_issue(test_key, fields="summary,description")
+    issue = jira.get_issue(test_key, fields="summary,description,labels")
+
+    # Coordination gate with Rovo's human-triggered "Test Automation Engineer"
+    # agent, which automates the same LRQA project and uses this same label:
+    # it checks for "automated" before writing anything and sets it after a
+    # successful PR. This has to check first too, or the two systems can race
+    # to automate the same ticket -- setting the label afterward alone isn't
+    # enough, since both could start before either one sets it.
+    if "automated" in (issue["fields"].get("labels") or []):
+        print(f"{test_key} already has the 'automated' label -- skipping, already handled")
+        return
+
     steps_text = JiraClient.extract_text(issue["fields"].get("description")) or issue["fields"]["summary"]
 
     task = (f"Write and verify a pytest test for Xray test case {test_key}:\n\n{steps_text}\n\n"
-            f"Save it as mobile-tests/test_{test_key.lower()}.py")
+            f"Save it as mobile-tests/test_{test_key.lower()}.py. Name the branch "
+            f"auto-tests/{test_key} and reference {test_key} in a comment near the top "
+            f"of the test file, for consistency with the other agent that also automates "
+            f"this Jira project.")
     run_agent(task)
 
 
