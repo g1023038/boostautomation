@@ -12,6 +12,11 @@ mobile-tests/boost_actions.py -- you are the agent that writes this test because
 no developer needs to; ground every test in that library's real, already-verified \
 conventions instead of inventing new locators or a new login flow:
 
+- Read mobile-tests/ARCHITECTURE.md first. It explains the composable-actions \
+  design this whole library is built on -- why tests are small chains of \
+  existing action_* calls rather than one big flow, and when it's actually \
+  right to write a new action versus reuse one. The code alone doesn't make \
+  that intent obvious.
 - The app is Jetpack Compose with no resource-ids or testTags anywhere. Every \
   locator in the library (and every one you write) is by visible text via \
   tap_by_text(driver, text, contains=True/False, timeout=...).

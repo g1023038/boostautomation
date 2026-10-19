@@ -42,7 +42,11 @@ LambdaTest device and read the actual result -- you do not stop after writing \
 code that merely looks correct.
 
 Ground rules, all learned the hard way by a human running this suite manually:
-- Read mobile-tests/boost_actions.py first. Reuse its action_* functions \
+- Read mobile-tests/ARCHITECTURE.md first, before anything else. It explains \
+  the composable-actions design (small verbs chained per test, the state dict, \
+  when to reuse vs. write a new action) -- the code alone doesn't make the \
+  intent obvious.
+- Read mobile-tests/boost_actions.py next. Reuse its action_* functions \
   (action_login, action_goto_product, action_set_payment, action_checkout, \
   action_voucher_details, action_recheck_balance, ...) -- never write driver \
   setup, login, or navigation from scratch. The app is Jetpack Compose with no \
@@ -72,7 +76,12 @@ actual output. If it fails, read the real error (not a guess) and fix the code. 
 Repeat. Only call git_commit_and_push and then open_pr once run_pytest has shown \
 the test passing. If you are still failing after several honest attempts, open \
 the PR anyway with the failure clearly explained in the body rather than silently \
-giving up or claiming success it hasn't earned."""
+giving up or claiming success it hasn't earned.
+
+After open_pr returns the PR URL, call update_jira_ticket with that URL --
+this is what makes the ticket traceable end to end (PR link comment,
+"automated" label, status moves to In Progress). Do this every time a PR is
+opened, not just on success."""
 
 TOOLS = [
     {
@@ -123,7 +132,7 @@ TOOLS = [
     },
     {
         "name": "open_pr",
-        "description": "Open a GitHub PR for the branch created by git_commit_and_push. Call last, once.",
+        "description": "Open a GitHub PR for the branch created by git_commit_and_push. Returns the PR URL.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -132,6 +141,19 @@ TOOLS = [
                 "body": {"type": "string"},
             },
             "required": ["branch", "title", "body"],
+        },
+    },
+    {
+        "name": "update_jira_ticket",
+        "description": ("Comment the PR URL on the Jira test ticket, add the 'automated' label, and "
+                         "transition it to In Progress. Call once, after open_pr returns a URL."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "test_key": {"type": "string"},
+                "pr_url": {"type": "string"},
+            },
+            "required": ["test_key", "pr_url"],
         },
     },
 ]
@@ -174,9 +196,30 @@ def tool_git_commit_and_push(branch, message, path):
 
 
 def tool_open_pr(branch, title, body):
-    subprocess.run(["gh", "pr", "create", "--title", title, "--body", body, "--base", "main", "--head", branch],
-                   cwd=REPO_ROOT, check=True)
-    return "PR opened"
+    full_body = body + "\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+    result = subprocess.run(
+        ["gh", "pr", "create", "--title", title, "--body", full_body, "--base", "main", "--head", branch],
+        cwd=REPO_ROOT, check=True, capture_output=True, text=True,
+    )
+    return result.stdout.strip()  # gh pr create prints the PR URL to stdout
+
+
+def tool_update_jira_ticket(test_key, pr_url):
+    jira = JiraClient()
+    jira.add_comment(test_key, f"Automation PR opened: {pr_url}")
+
+    issue = jira.get_issue(test_key, fields="labels")
+    labels = issue["fields"].get("labels") or []
+    if "automated" not in labels:
+        jira.update_fields(test_key, {"labels": labels + ["automated"]})
+
+    try:
+        jira.transition_issue(test_key, "In Progress")
+    except ValueError as exc:
+        # Transition name can differ per workflow scheme -- don't fail the
+        # whole run over it, the comment + label are the important part.
+        return f"commented + labeled {test_key}, but could not transition: {exc}"
+    return f"updated {test_key}: PR comment, 'automated' label, transitioned to In Progress"
 
 
 DISPATCH = {
@@ -185,6 +228,7 @@ DISPATCH = {
     "run_pytest": lambda i: tool_run_pytest(i["test_expr"]),
     "git_commit_and_push": lambda i: tool_git_commit_and_push(i["branch"], i["message"], i["path"]),
     "open_pr": lambda i: tool_open_pr(i["branch"], i["title"], i["body"]),
+    "update_jira_ticket": lambda i: tool_update_jira_ticket(i["test_key"], i["pr_url"]),
 }
 
 
@@ -217,7 +261,7 @@ def run_agent(task_description):
             break
 
         tool_results = []
-        pr_opened = False
+        ticket_updated = False
         for block in tool_uses:
             print(f"[iteration {iteration}] tool: {block['name']}({block['input']})")
             try:
@@ -230,12 +274,12 @@ def run_agent(task_description):
                 "tool_use_id": block["id"],
                 "content": str(result),
             })
-            if block["name"] == "open_pr":
-                pr_opened = True
+            if block["name"] == "update_jira_ticket":
+                ticket_updated = True
 
         messages.append({"role": "user", "content": tool_results})
-        if pr_opened:
-            print("PR opened -- agent run complete")
+        if ticket_updated:
+            print("Jira ticket updated -- agent run complete")
             break
     else:
         print(f"Hit MAX_ITERATIONS ({MAX_ITERATIONS}) without opening a PR -- stopping")

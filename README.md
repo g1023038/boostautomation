@@ -80,6 +80,12 @@ R1,000.00 max), not just one arbitrary amount -- see
 
 ## No developer needed to write these tests -- the agent does, on this base
 
+See `mobile-tests/ARCHITECTURE.md` for how `boost_actions.py` is actually
+designed -- the composable-actions pattern, the state dict, when to reuse
+an action vs. write a new one. Written specifically as context for whichever
+agent (ours or Rovo's) is about to generate code here; `mobile-tests/TEST_INDEX.md`
+is the complementary "what's already covered" view.
+
 `mobile-tests/boost_actions.py` isn't just a diagnostic tool -- it's the base
 library the codegen step (`scripts/generate_script.py`, `mobile` test type)
 is explicitly instructed to build on. When a new Xray test case for this app

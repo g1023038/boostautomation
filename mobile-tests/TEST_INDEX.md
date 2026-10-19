@@ -1,5 +1,9 @@
 # Test coverage index
 
+See `ARCHITECTURE.md` first for how `boost_actions.py` is actually designed
+(the composable-actions pattern, the state dict, known traps) -- this file
+is the *what's covered*, that one is the *how to build on it*.
+
 Canonical source of truth for what's automated against the Booost app --
 kept in this repo (not Confluence) so it stays in lockstep with the code via
 the same PR review, not a separate page that drifts. The codegen agent reads
