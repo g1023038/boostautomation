@@ -356,7 +356,7 @@ def main():
     state = {
         "id_number": os.environ["TEST_ID_NUMBER"],
         "phone": os.environ["TEST_PHONE_LOCAL"],
-        "otp": os.environ.get("TEST_OTP", "123456"),
+        "otp": os.environ.get("TEST_OTP") or "123456",
         "product_name": os.environ.get("PRODUCT_NAME"),
         "product_amount": os.environ.get("PRODUCT_AMOUNT"),
         "payment_method": os.environ.get("PAYMENT_METHOD", "points"),

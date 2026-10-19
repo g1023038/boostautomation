@@ -31,7 +31,7 @@ def base_state():
     return {
         "id_number": os.environ["TEST_ID_NUMBER"],
         "phone": os.environ["TEST_PHONE_LOCAL"],
-        "otp": os.environ.get("TEST_OTP", "123456"),
+        "otp": os.environ.get("TEST_OTP") or "123456",
         "card_cvc": os.environ.get("CARD_CVC", "123"),
         "card_holder_name": os.environ.get("CARD_HOLDER_NAME", "Test User"),
         "complete_purchase": True,
