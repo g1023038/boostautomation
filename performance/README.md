@@ -188,12 +188,23 @@ for, not just the landing load.
 
 `Mixed Journey (5000 User)` and `Soak Endurance` both now have **all 9
 branches real and confirmed**, each grouped under its own named
-`Transaction Controller` for per-branch latency reporting. The earlier
-percentage-weighted `ThroughputController` ("Percent Executions" mode,
-20/20/20/10/10/5/5/5/5 one-branch-per-iteration selection) was removed at
-request -- every branch now runs on **every** loop iteration (a full sweep
-of all 9, not a weighted pick of one), reported as 9 separate named
-transactions per iteration.
+`Transaction Controller` for per-branch latency reporting, numbered
+`01_LoginAuth` through `09_ProfileSettings` (mirrored as `NN_Soak_*`). The
+earlier percentage-weighted `ThroughputController` ("Percent Executions"
+mode, 20/20/20/10/10/5/5/5/5 one-branch-per-iteration selection) was
+removed at request -- every branch now runs on **every** loop iteration (a
+full sweep of all 9, not a weighted pick of one).
+
+Both thread groups now simulate a **returning, already-registered user**
+doing everything the app offers in one session, at the same depth as
+Progressive Load (not the landing/list-only version from earlier): Future
+Boost, Vouchers and Partner/Loyalty each include their "open detail" drill
+-down call with a dynamically chained ID, and a `10_Logout` step
+(`IfController` gated on `refresh_token` presence) closes out each
+iteration. The only things still excluded are identity status
+(`GET /v1/identity/status`) and registration (`POST /v1/identity/register`)
+-- both stay exclusive to `Registration Load`, since Mixed Journey/Soak
+assume an already-registered identity.
 
 The Profile *write* (PATCH `/v1/identity/profile`) is documented too, but
 the brief says to keep profile/settings read-based for this round, so it
@@ -219,6 +230,11 @@ check:
   after removing the `ThroughputController` weighting, confirmed all 9
   branches now fire on every iteration -- 3/3 hits each across all 9 named
   transactions, 0 errors.
+- **Mixed Journey, full existing-user depth (1 fresh-registered user)**:
+  after adding the open-detail drill-downs and Logout, every one of the 26
+  samples came back 200/204 -- `01_LoginAuth` through `09_ProfileSettings`
+  plus `FutureBoostDetailPage`, `VouchersPage`, `VoucherOffering`,
+  `PartnerPage`, and `10_Logout` (`POST /v1/auth/logout` -> 204), 0 errors.
 - **Soak Endurance (1 user, 15s duration)**: confirmed the scheduler
   mechanism itself works, not just the content -- 17 samples recorded
   across ~18s of actual run time (several looped iterations within the
