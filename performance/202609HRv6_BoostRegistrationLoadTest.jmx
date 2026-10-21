@@ -8,6 +8,8 @@ RATE LIMIT WARNING, read before sizing any run: /v1/auth/otp is limited to 3 req
 
 SA ID ENTROPY CEILING -- CONFIRMED LIVE, BLOCKS THE 5,000-IDENTITY TARGET AS-IS (2026-10-21): the fixed DOB=2000-01-01 SMS-bypass trick only leaves a 4-digit sequence number free in the SA ID (yymmdd is forced to 000101, citizen/gender digits are policy-fixed) -- about 10,000 valid distinct IDs EVER, for ALL teams/time that have used this same convention against this PPE environment, not just this run. Reproduced directly against api-ppe.booost.com: a freshly-generated identity on this DOB got 409 identity_in_use on /verify ("This identity document is already registered to a different phone number") against an ID that had never been used in this session -- i.e. it collided with someone else's prior test registration. Birthday-paradox math says 5,000 draws from a ~10,000-slot space produces collisions as the norm, not the exception. This is a test-tooling ceiling, not an application performance finding -- a progressive run hitting rising 409/403 rates at higher user counts would be this artifact, not BOOOST degrading. Needs resolving with the backend/MIS team before trusting the 5,000-user registration numbers: either a wider/dedicated bypass range, a pre-allocated ID block for this test window, or accepting retry-on-collision logic added to this script (not yet done).
 
+GRAPHQL GATEWAY NOT REACHABLE AS SPECIFIED -- CONFIRMED LIVE (2026-10-21): Scenarios 3-9 (Home, Balance/History, Future Boost, Vouchers, Deals, BAM, Partner/Loyalty) are wired up per the Oct 2026 scope doc's exact GraphQL schema, but POST https://api-ppe.booost.com/graphql returns 404 with a plain-text body of "404 page not found" -- not a GraphQL error, not even JSON. That's the signature of a server with literally no route registered at that path, not an application-level problem these samplers can work around. The scope doc itself hedged on this ("Gateway / BFF Root: https://api-ppe.booost.com (or your target environment gateway)"), so the real gateway host for PPE needs confirming before any of Scenarios 3-9 can be trusted. Every GraphQL sampler's domain is independently overridable via -JgraphqlHost (defaults to ${host}, confirmed working by pointing it at a throwaway host and seeing the sampler's URL change accordingly) -- once the real gateway is known, re-point with -JgraphqlHost=the-real-host and re-run; the request bodies/queries themselves don't need touching, they were accepted as well-formed JSON by whatever served the 404 (it routed and rejected on path, not on body).
+
 HOW TO RUN EACH SCENARIO -- one parameterized plan, scenario selection is via thread-count properties (0 = that group does nothing), not by hand-editing the file:
 
   Registration Load (new, never-registered identities):
@@ -31,12 +33,17 @@ HOW TO RUN EACH SCENARIO -- one parameterized plan, scenario selection is via th
   Payments Order Flow is OUT OF SCOPE for this round per the Oct 2026 brief -- left in the plan (num_threads
   defaults to 0, opt in explicitly with -JpayUsers=N if ever needed again).
 
-NOT YET BUILT -- blocked on missing API docs, not forgotten: Home, Future Boost, Balance/transaction history,
-Vouchers browsing, Deals/Rewards, BAM, Partner/loyalty, and the Profile *write* (PATCH) journey. Only
-boost-auth-api was provided as a Mobile Integration Guide; those other screens are backed by different
-services with no endpoint docs supplied yet. Scaffolded as disabled placeholders under "4 - Mixed Journey"
-below with the brief's own workload percentages (20/20/20/10/10/5/5/5/5) so wiring them in later is a data
-edit, not a redesign -- see performance/README.md for the full list and what's needed to unblock each one.</stringProp>
+Scenarios 3-9 (Home, Balance/History, Future Boost, Vouchers, Deals, BAM,
+Partner/Loyalty) are now built as real GraphQL samplers inside "2 - Login
+Authentication" (toggle the whole loop with -JincludeBrowsing), per the
+Oct 2026 BFF/GraphQL scope doc -- see the GRAPHQL GATEWAY finding above
+before trusting them, the endpoint isn't reachable at the specified host
+yet. The Profile *write* (PATCH /v1/identity/profile) is documented too
+but the brief says keep profile/settings read-based for this round, so
+it's still not built. "4 - Mixed Journey" still has these same 7 journeys
+as disabled placeholders with TODO paths (not yet replaced with the real
+GraphQL calls built into group 2) -- see performance/README.md for what's
+left to wire there.</stringProp>
       <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
         <collectionProp name="Arguments.arguments"/>
@@ -80,9 +87,19 @@ edit, not a redesign -- see performance/README.md for the full list and what's n
             <stringProp name="Argument.value">${__P(paymentsMemberId,BB931354E86C07456BB6DCFF39E5CAD11B)}</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
-          <elementProp name="appApiHost" elementType="Argument">
-            <stringProp name="Argument.name">appApiHost</stringProp>
-            <stringProp name="Argument.value">${__P(appApiHost,TODO-host-not-yet-documented.booost.com)}</stringProp>
+          <elementProp name="appVersion" elementType="Argument">
+            <stringProp name="Argument.name">appVersion</stringProp>
+            <stringProp name="Argument.value">${__P(appVersion,1.0.1)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="platform" elementType="Argument">
+            <stringProp name="Argument.name">platform</stringProp>
+            <stringProp name="Argument.value">${__P(platform,android)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="graphqlHost" elementType="Argument">
+            <stringProp name="Argument.name">graphqlHost</stringProp>
+            <stringProp name="Argument.value">${__P(graphqlHost,${host})}</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
         </collectionProp>
@@ -107,6 +124,14 @@ edit, not a redesign -- see performance/README.md for the full list and what's n
           <elementProp name="" elementType="Header">
             <stringProp name="Header.name">Accept</stringProp>
             <stringProp name="Header.value">application/json</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-App-Version</stringProp>
+            <stringProp name="Header.value">${appVersion}</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-Platform</stringProp>
+            <stringProp name="Header.value">${platform}</stringProp>
           </elementProp>
           <elementProp name="" elementType="Header">
             <stringProp name="Header.name">User-Agent</stringProp>
@@ -677,13 +702,476 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
             <hashTree/>
           </hashTree>
         </hashTree>
-        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="03_ProfileRead (optional, toggle with -JincludeProfile)">
+        <!-- Scenarios 3-9: Core Browsing Loop, all via the same GraphQL
+             gateway (POST /graphql on ${host}), per the Oct 2026 scope doc.
+             Toggle the whole loop off with -JincludeBrowsing=false if a run
+             only needs the bare login (e.g. isolating a login-spike test
+             from browsing-endpoint noise). -->
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="03-09_CoreBrowsingLoop (toggle with -JincludeBrowsing)">
+          <stringProp name="IfController.condition">${__P(includeBrowsing,true)}</stringProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+          <boolProp name="IfController.useExpression">true</boolProp>
+        </IfController>
+        <hashTree>
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="03_HomeDashboard">
+            <boolProp name="TransactionController.parent">true</boolProp>
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Home Dashboard)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetHomeDashboard { homeDashboard { greeting memberName heroBanner { id title imageUrl deeplink } activeWidgets { widgetType title status } faqs { id question answer } termsAndConditions { version url } } }&quot;
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Home Dashboard query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="04_BalanceHistory">
+            <boolProp name="TransactionController.parent">true</boolProp>
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Wallet Balances)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetWalletBalances { wallet { boostPoints { available pending } bamEntries futureBoostValue currency } }&quot;
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Wallet Balances query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Transaction History)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetTransactionHistory($limit: Int!, $offset: Int!) { transactionHistory(limit: $limit, offset: $offset) { transactions { id title type amount timestamp partnerName status } totalCount hasMore } }&quot;,
+  &quot;variables&quot;: { &quot;limit&quot;: 20, &quot;offset&quot;: 0 }
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Transaction History query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="05_FutureBoost">
+            <boolProp name="TransactionController.parent">true</boolProp>
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Future Boost L1 Summary)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetFutureBoostSummary { futureBoost { totalAccumulated lockedAmount unlockedAmount nextUnlockDate currency } }&quot;
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Future Boost Summary query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Future Boost L2 Breakdown)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetFutureBoostBreakdown { futureBoostBreakdown { partnerName planNumber productName lockedValue unlockedValue finalUnlockDate status } }&quot;
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Future Boost Breakdown query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="06_Vouchers (browse only, no purchase)">
+            <boolProp name="TransactionController.parent">true</boolProp>
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Voucher Catalogue)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetVoucherCatalogue { voucherCatalogue { categories { id name iconUrl } featuredVouchers { id merchantName title minDenomination maxDenomination discountPercentage imageUrl } } }&quot;
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Voucher Catalogue query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Voucher Detail)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetVoucherDetail($voucherId: ID!) { voucherDetail(id: $voucherId) { id merchantName title description terms fixedDenominations allowsCustomAmount termsAndConditions expiryDays } }&quot;,
+  &quot;variables&quot;: { &quot;voucherId&quot;: &quot;${__P(voucherId,VOUCH-CHECKERS-01)}&quot; }
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Voucher Detail query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="07_Deals">
+            <boolProp name="TransactionController.parent">true</boolProp>
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Deals List)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetDealsList { deals { id title partnerName description validityDate imageUrl badgeLabel deeplink } }&quot;
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Deals List query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="08_BAM">
+            <boolProp name="TransactionController.parent">true</boolProp>
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (BAM Dashboard)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetBAMDashboard { boostAMillion { activeDrawId drawDate jackpotAmount userEntries maxEntriesAllowed rulesUrl consolationGamesAvailable { gameType playsRemaining } } }&quot;
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">BAM Dashboard query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="09_PartnerLoyalty">
+            <boolProp name="TransactionController.parent">true</boolProp>
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Partner Directory)">
+              <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
+              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{
+  &quot;query&quot;: &quot;query GetPartnerDirectory { partners { partnerId name category isLinked logoUrl cardStatus availableOffersCount } }&quot;
+}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer Auth">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Authorization</stringProp>
+                    <stringProp name="Header.value">Bearer ${access_token}</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Partner Directory query did not return 200</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+        </hashTree>
+
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="10_ProfileSettings (optional, toggle with -JincludeProfile)">
           <stringProp name="IfController.condition">${__P(includeProfile,true)}</stringProp>
           <boolProp name="IfController.evaluateAll">false</boolProp>
           <boolProp name="IfController.useExpression">true</boolProp>
         </IfController>
         <hashTree>
-          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="03_ProfileRead">
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="10_ProfileSettings">
             <boolProp name="TransactionController.parent">true</boolProp>
             <boolProp name="TransactionController.includeTimers">false</boolProp>
           </TransactionController>
@@ -721,13 +1209,13 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
             </hashTree>
           </hashTree>
         </hashTree>
-        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="04_Logout (only if refresh_token present)">
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="Teardown_Logout (only if refresh_token present)">
           <stringProp name="IfController.condition">${__groovy(vars.get(&quot;refresh_token&quot;) != null &amp;&amp; vars.get(&quot;refresh_token&quot;).startsWith(&quot;RT&quot;))}</stringProp>
           <boolProp name="IfController.evaluateAll">false</boolProp>
           <boolProp name="IfController.useExpression">true</boolProp>
         </IfController>
         <hashTree>
-          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="04_Logout">
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Teardown_Logout">
             <boolProp name="TransactionController.parent">true</boolProp>
             <boolProp name="TransactionController.includeTimers">false</boolProp>
           </TransactionController>

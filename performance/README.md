@@ -21,9 +21,15 @@ nothing needs hand-editing between runs:
 | Thread group | Covers (brief's priority) | Threads property |
 |---|---|---|
 | `1 - Registration Load` | Registration (P0 #2) | `-JregUsers` |
-| `2 - Login Authentication` | Login/auth (P0 #1), + Profile read, + logout/login cycles | `-JloginUsers` |
+| `2 - Login Authentication` | Login/auth (P0 #1) + the full Core Browsing Loop (Home, Balance/History, Future Boost, Vouchers, Deals, BAM, Partner/Loyalty, Profile) + logout | `-JloginUsers` |
 | `3 - Payments Order Flow` | out of scope this round, kept for later | `-JpayUsers` (default 0) |
 | `4 - Mixed Journey` | Test 3's 5,000-user mixed workload | `-JmixedUsers` (mostly placeholders, see below) |
+
+Every request now carries `X-App-Version` and `X-Platform` (both
+`-J`-overridable, default `1.0.1`/`android`) alongside the existing
+`Content-Type`/`Accept`, per the Oct 2026 BFF/GraphQL scope doc's header
+requirements -- added at the shared Common Headers level so every sampler
+gets them automatically, not per-request.
 
 A Datadog backend listener ships every sampler's metrics/logs in real time if
 `ddApiKey` is set -- this is what lines up JMeter and Datadog timestamps per
@@ -115,24 +121,44 @@ that scale -- not reusing a smaller pool. Also flag the per-IP limit to the
 backend team before tomorrow: if the JMeter load generators share only a
 handful of egress IPs, 10/hour per IP can trip even with a large phone pool.
 
-### Test 3 (Mixed Journey) and 7 of the brief's journeys are blocked on missing API docs
+### GraphQL gateway not reachable as specified -- CONFIRMED LIVE, blocks Scenarios 3-9
 
-Only the boost-auth-api Mobile Integration Guide was provided. The brief
-also asks for Home, Future Boost, Balance/transaction history, Vouchers
-(browse only), Deals/Rewards, BAM, and Partner/loyalty -- none of those have
-documented endpoints yet, so none are real in `4 - Mixed Journey`; they're
-scaffolded as disabled placeholders (`${appApiHost}/v1/TODO/...`) carrying
-the brief's own workload split (20/20/20/10/10/5/5/5/5) so filling them in
-is a data edit (host, path, method, request/response shape) once the docs
-exist, not a redesign. Login (20%) and Profile read (5%) are already real in
-that group. The Profile *write* (PATCH `/v1/identity/profile`) is
-documented and could be added too, but the brief says to keep
-profile/settings read-based for this round.
+The Oct 2026 BFF/GraphQL scope doc provided the missing endpoints for Home,
+Balance/History, Future Boost, Vouchers (browse only), Deals, BAM, and
+Partner/Loyalty -- all served through one gateway, `POST /graphql`. All
+seven are now built into `2 - Login Authentication` as real GraphQL
+samplers (toggle the whole loop with `-JincludeBrowsing=false` if a run
+needs bare login only), using the exact queries/variables from that doc.
 
-To actually weight the 9 branches by the brief's percentages once they're
-all real, use JMeter's `ThroughputController` in "Percent Executions" mode
-per branch -- not done here, since wiring up a weighted controller for 7
-branches that can't run yet would be complexity with nothing real to weight.
+Tested live and the gateway itself isn't reachable yet: `POST
+https://api-ppe.booost.com/graphql` returns **404** with a plain-text body
+of `"404 page not found"` -- not a GraphQL error, not JSON at all. That's
+the signature of a server with no route registered at that path, not
+something a correctly-formed request can work around. The scope doc itself
+hedged on the host (*"Gateway / BFF Root: `https://api-ppe.booost.com` (or
+your target environment gateway)"*), so this needs the real PPE gateway
+host confirmed before Scenarios 3-9 can be trusted.
+
+Each GraphQL sampler's domain is independently overridable via
+`-JgraphqlHost` (defaults to `${host}`) -- confirmed working by pointing it
+at a throwaway host and verifying the sampler's actual request URL changed
+accordingly. Once the real gateway is known: `-JgraphqlHost=the-real-host`,
+no other changes needed -- the request bodies were accepted as well-formed
+JSON by whatever served the 404 (it routed and rejected on path, not on
+body).
+
+`4 - Mixed Journey` (Test 3's weighted 20/20/20/10/10/5/5/5/5 workload)
+still has these same 7 journeys as disabled TODO placeholders, not yet
+replaced with the real GraphQL calls now built into group 2 -- deferred
+until the gateway host is confirmed and group 2's version is proven to
+work end to end, rather than duplicating untested samplers a second time.
+Weighting them by the brief's percentages once they're real: JMeter's
+`ThroughputController` in "Percent Executions" mode per branch, not done
+here yet.
+
+The Profile *write* (PATCH `/v1/identity/profile`) is documented too, but
+the brief says to keep profile/settings read-based for this round, so it
+stays unbuilt.
 
 ### Verified live against api-ppe.booost.com (2026-10-21)
 
@@ -157,6 +183,18 @@ check, for one real user through each real thread group:
   generation opt-in via `-JtotalUsers` (see above); re-ran the full
   two-phase sequence afterward and confirmed phase 2 then read the correct
   pool row.
+
+- **Login + full Core Browsing Loop (1 user, fresh identity, re-tested
+  after the fix above)**: `otp` 200 -> `verify` 200 -> all 10 GraphQL
+  calls (Home, Wallet Balances, Transaction History, Future Boost L1+L2,
+  Voucher Catalogue+Detail, Deals, BAM, Partner Directory) **404** -- see
+  the GraphQL gateway finding above, this is the real, live result, not
+  a hypothetical -- `profile` 200 -> `logout` 204. Everything that isn't
+  the GraphQL gateway worked correctly, including the assertion messages
+  firing exactly as designed on the 404s.
+- Confirmed the `-JgraphqlHost` override itself works correctly (separate
+  from whether the real gateway is reachable) by pointing it at a
+  throwaway host and verifying the sampler's request URL changed to match.
 
 Not yet run at real scale (hundreds/thousands of users) or for the
 Payments/Mixed Journey groups -- this was a correctness check of the flow
