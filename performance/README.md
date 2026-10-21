@@ -95,8 +95,9 @@ alone unless `-JtotalUsers` is set.
 - **Test 2 (progressive)**: `-JprogUsers` stepped
   250/500/1000/2000/3000/4000/5000 against the *same* pool (`CSVDataSet`
   recycles rows).
-- **Test 3 (5,000-user mixed journey)**: `-JmixedUsers=5000` -- 5 of 9
-  branches are real and confirmed (see below), 4 remain placeholders.
+- **Test 3 (5,000-user mixed journey)**: `-JmixedUsers=5000` -- all 9 of 9
+  branches are real and confirmed (see below); not yet weighted by the
+  brief's percentages, see the GraphQL section.
 - **Test 4 (login spike)**: `-JloginSpikeUsers` stepped 500/1000/2000, short
   `-JloginSpikeRampup` (concentrated).
 - **Test 5 (registration load)**: `-JregUsers` stepped 100/250/500/1000,
@@ -160,36 +161,37 @@ returned 200 with real PPE data (real voucher/deal/history rows).
 `-JgraphqlHost`/`-JgraphqlPath` now default to these confirmed values
 (still overridable if the gateway ever moves).
 
-**3 of 9 Mixed Journey branches (5 of 10 total GraphQL-backed scenarios)
-are now real queries, confirmed live through this exact JMX file, not just
-ad-hoc requests:**
+**All 10 scenarios are now real queries, confirmed live through this exact
+JMX file -- not ad-hoc requests.** Found by running a GraphQL introspection
+query (`query { __schema { queryType { fields { name } } } }`) against the
+confirmed gateway -- allowed, returned the entire query schema in one call,
+which is how the remaining 7 were found so quickly rather than guessing
+field names one at a time:
 
-| Scenario | Real query | Confirmed where |
+| Scenario | Real query | Notes |
 |---|---|---|
-| Home | `DashboardPage` (header, badges, tapTapBoosts, vouchers, deals, history, legal) | Progressive Load, Mixed Journey, Soak |
-| Voucher Browsing | `BoostBuyPage` (promotion + legal only -- it's the landing page, not a catalogue; the earlier "Voucher Catalogue"/"Voucher Detail" split was wrong, replaced with this single real query) | Progressive Load, Mixed Journey, Soak |
-| BAM | `BoostAMillionPage` (promotion, stories, currentDrawPeriod with prompts/groups/entryMethods, completedDrawPeriods, howItWorks, legal) | Progressive Load, Mixed Journey, Soak |
-| Login/auth | `/v1/auth/otp` + `/v1/auth/verify` | all groups |
-| Profile/settings | `GET /v1/identity/profile` | all groups |
+| Login/auth | `/v1/auth/otp` + `/v1/auth/verify` | |
+| Home | `DashboardPage` | header, badges, tapTapBoosts, vouchers, deals, history, legal |
+| Future Boost | `FutureBoostPage` + `FutureBoostDetailPage(offeringId)` | load + **open detail**, `offeringId` extracted dynamically from the first response via `JSONPostProcessor`, not hardcoded |
+| Balance/History | `BalancePage(currency: "ZAR")` | one call covers both load and transaction history; takes a required `currency` arg |
+| Vouchers | `BoostBuyPage` + `VouchersPage` + `VoucherOffering(id)` | landing, then real catalogue, then **open voucher details** -- a 3-step chain, replacing the single guessed query this used to be; `id` extracted dynamically |
+| Deals | `DealsPage` | "open detail" (`deal(id)`) exists per introspection but every deals list returned empty during testing, so there was no real ID to verify it against -- left unwired rather than guessing |
+| BAM | `BoostAMillionPage` | promotion, stories, currentDrawPeriod with prompts/groups/entryMethods, completedDrawPeriods, howItWorks, legal |
+| Partner/Loyalty | `PartnerList` + `PartnerPage(partnerId)` | list + **open partner**, `partnerId` extracted dynamically |
+| Profile/settings | `GET /v1/identity/profile` | read-only, matches the brief's own instruction |
 
-**Still unconfirmed, using the Oct 2026 scope doc's illustrative field
-names** (will likely fail with a GraphQL error, not a 404, since the
-gateway itself now resolves): Future Boost, Balance/History, Deals, Voucher
-Detail, Partner Directory. Worth checking before building separate queries
-for these: the confirmed `DashboardPage` response already returns
-`vouchers`/`deals`/`history` as sub-fields of the one dashboard query, so
-Balance/History and Deals may reuse `DashboardPage` rather than need
-dedicated queries of their own. Capture the actual queries the PPE app
-sends for the remaining screens (proxy capture, or the query files in the
-`boost-mobile` iOS/Android repos) before trusting those samplers.
+All three detail-page queries (`FutureBoostDetailPage`, `VoucherOffering`,
+`PartnerPage`) take a real ID chained dynamically from the preceding list
+call's response, not a hardcoded placeholder -- this is what actually
+proves the "open detail"/"open partner" steps the brief's journeys ask
+for, not just the landing load.
 
-`Mixed Journey (5000 User)` and `Soak Endurance` both now have these 5 real
-branches live (Login, Home, Voucher Browsing, BAM, Profile) alongside 4
-still-disabled TODO placeholders (Future Boost, Balance/History, Deals,
-Partner/Loyalty). Weighting the 9 branches by the brief's percentages
-(20/20/20/10/10/5/5/5/5) once all are real: JMeter's `ThroughputController`
-in "Percent Executions" mode per branch, not done here yet -- worth
-revisiting now that more than half the branches are confirmed.
+`Mixed Journey (5000 User)` and `Soak Endurance` both now have **all 9
+branches real and confirmed** (verified live: one Mixed Journey run hit
+every branch, 200 across all 9, 0 errors). Weighting them by the brief's
+percentages (20/20/20/10/10/5/5/5/5): JMeter's `ThroughputController` in
+"Percent Executions" mode per branch, still not done -- now that every
+branch is real, this is the next thing actually worth doing.
 
 The Profile *write* (PATCH `/v1/identity/profile`) is documented too, but
 the brief says to keep profile/settings read-based for this round, so it
@@ -202,12 +204,15 @@ check:
 
 - **Registration (1 user)**: `Username Generator` -> `otp` 200 -> `verify`
   200 -> `register` **201 Created** -> `status` 200. 0 errors.
-- **Progressive Load (1 user)**: `otp` 200 -> `verify` 200 -> `Home`
-  (`DashboardPage`) **200** -> `Voucher Browsing` (`BoostBuyPage`) **200**
-  -> `BAM` (`BoostAMillionPage`) **200** -> `profile` 200 -> `logout` 204.
-  Full real journey, 0 errors, once the gateway host was confirmed.
-- **Mixed Journey (1 user)**: all 5 real branches in one run -- Login,
-  Home, Voucher Browsing, BAM, Profile -- all 200, 0 errors.
+- **Progressive Load (1 user, full journey)**: `otp` 200 -> `verify` 200 ->
+  `Home` 200 -> `Balance/History` 200 -> `Future Boost` 200 -> `Future
+  Boost detail` 200 -> `Vouchers (landing)` 200 -> `Vouchers (catalogue)`
+  200 -> `Voucher detail` 200 -> `Deals` 200 -> `BAM` 200 -> `Partner list`
+  200 -> `Partner detail` 200 -> `profile` 200 -> `logout` 204. Every one
+  of the 10 scenarios, in one real run, 0 errors.
+- **Mixed Journey (1 user)**: all 9 of 9 branches in one run -- Login,
+  Home, Future Boost, Balance/History, Deals, Voucher Browsing, BAM,
+  Partner/Loyalty, Profile -- all 200, 0 errors.
 - **Soak Endurance (1 user, 15s duration)**: confirmed the scheduler
   mechanism itself works, not just the content -- 17 samples recorded
   across ~18s of actual run time (several looped iterations within the
@@ -224,10 +229,10 @@ check:
   a throwaway host and verifying the sampler's request URL changed to
   match.
 
-Not yet run at real scale (hundreds/thousands of users), and Future Boost/
-Balance-History/Deals/Partner-Loyalty/Voucher-Detail/Payments remain
-unverified -- this was a correctness check of the flow logic and the newly
-confirmed gateway, not a dry run of tomorrow's actual load.
+Not yet run at real scale (hundreds/thousands of users), and Payments
+remains untouched (deliberately out of scope this round) -- this was a
+correctness check of the flow logic and the newly confirmed gateway/
+queries, not a dry run of tomorrow's actual load.
 
 ### It already generates its own test users -- worth reusing, not rebuilding
 
