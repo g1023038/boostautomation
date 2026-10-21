@@ -6,10 +6,15 @@
 
 RATE LIMIT WARNING, read before sizing any run: /v1/auth/otp is limited to 3 requests per phone per hour and 10 per IP per hour by default (429 rate_limit_exceeded). A thread pool that recycles a small CSV across thousands of iterations will mostly measure the rate limiter, not auth performance -- size the identity pool to at least (planned login attempts within any rolling hour) / 3. For the 4,000-5,000 user range in the Oct 2026 PPE performance brief, generate and pre-register a pool of at least 5,000 distinct identities before running the Login/Authentication group at that scale. Also confirm with the backend team whether PPE's per-IP limit will be raised for the test window -- several JMeter load generators sharing few egress IPs can trip the 10/hour per-IP limit even with a large phone pool.
 
+SA ID ENTROPY CEILING -- CONFIRMED LIVE, BLOCKS THE 5,000-IDENTITY TARGET AS-IS (2026-10-21): the fixed DOB=2000-01-01 SMS-bypass trick only leaves a 4-digit sequence number free in the SA ID (yymmdd is forced to 000101, citizen/gender digits are policy-fixed) -- about 10,000 valid distinct IDs EVER, for ALL teams/time that have used this same convention against this PPE environment, not just this run. Reproduced directly against api-ppe.booost.com: a freshly-generated identity on this DOB got 409 identity_in_use on /verify ("This identity document is already registered to a different phone number") against an ID that had never been used in this session -- i.e. it collided with someone else's prior test registration. Birthday-paradox math says 5,000 draws from a ~10,000-slot space produces collisions as the norm, not the exception. This is a test-tooling ceiling, not an application performance finding -- a progressive run hitting rising 409/403 rates at higher user counts would be this artifact, not BOOOST degrading. Needs resolving with the backend/MIS team before trusting the 5,000-user registration numbers: either a wider/dedicated bypass range, a pre-allocated ID block for this test window, or accepting retry-on-collision logic added to this script (not yet done).
+
 HOW TO RUN EACH SCENARIO -- one parameterized plan, scenario selection is via thread-count properties (0 = that group does nothing), not by hand-editing the file:
 
   Registration Load (new, never-registered identities):
-    jmeter -n -t this.jmx -JcsvGenCount=N -Jcsvfile=pool.csv -JregUsers=N -JregRampup=secs -JregLoops=1
+    jmeter -n -t this.jmx -JtotalUsers=N -Jcsvfile=pool.csv -JregUsers=N -JregRampup=secs -JregLoops=1
+    (totalUsers drives the Username Generator; it must be set explicitly and match
+    regUsers -- it defaults to 0/generate-nothing specifically so an unrelated run
+    targeting a different group can never silently overwrite an existing pool.)
 
   Login / Authentication (needs an ALREADY-REGISTERED pool -- run Registration Load once first against the
   same -Jcsvfile to create it, then point Login at that same file):
@@ -124,7 +129,7 @@ edit, not a redesign -- see performance/README.md for the full list and what's n
         <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Username Generator">
           <stringProp name="cacheKey">true</stringProp>
           <stringProp name="filename"></stringProp>
-          <stringProp name="parameters">count=${__P(totalUsers,${__P(regUsers,100)})} dob=2000-01-01 gender=any csv=${__P(csvfile,testusers.csv)}</stringProp>
+          <stringProp name="parameters">count=${__P(totalUsers,0)} dob=2000-01-01 gender=any csv=${__P(csvfile,testusers.csv)}</stringProp>
           <stringProp name="scriptLanguage">groovy</stringProp>
           <stringProp name="script">import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -142,6 +147,17 @@ import java.util.concurrent.ThreadLocalRandom
  *
  * PARAMETERS (Parameters box, space-separated key=value):
  *   count=100                number of users to generate
+ *   count=0                  how many to generate -- defaults to 0, i.e. GENERATE
+ *                            NOTHING and leave any existing csv file alone. This
+ *                            thread group runs on every invocation regardless of
+ *                            which scenario group you're targeting that run, so a
+ *                            non-zero default here would silently overwrite (with
+ *                            zero or the wrong rows) a pool a previous run already
+ *                            registered -- confirmed live: running with regUsers=0
+ *                            while chaining off a prior default clobbered a
+ *                            just-registered identity's csv row with an empty one.
+ *                            Pass -JtotalUsers explicitly when you actually want to
+ *                            (re)generate a pool.
  *   dob=2000-01-01           fixed DOB (default; keeps the SMS bypass)
  *   dobStart / dobEnd        use a real range instead (needs real OTP flow)
  *   gender=any               male | female | any
@@ -159,7 +175,11 @@ if (Parameters?.trim()) {
     }
 }
 
-int     count     = (params.count     ?: &quot;100&quot;).toInteger()
+int     count     = (params.count     ?: &quot;0&quot;).toInteger()
+if (count &lt;= 0) {
+    log.info(&quot;Username Generator: count=0 (or unset), nothing to generate -- leaving any existing csv file as-is. Pass -JtotalUsers=N to actually (re)generate a pool.&quot;)
+    return
+}
 String  genderReq = (params.gender    ?: &quot;any&quot;).toLowerCase()
 String  citizen   = (params.citizen   ?: &quot;0&quot;)
 String  csvName   = (params.csv       ?: &quot;testusers.csv&quot;)

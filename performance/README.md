@@ -46,12 +46,24 @@ you cannot log in as someone who was never registered.
 ```
 # Phase 1 -- register N fresh identities, creates pool.csv
 jmeter -n -t 202609HRv6_BoostRegistrationLoadTest.jmx \
-  -Jcsvfile=pool.csv -JregUsers=N -JregRampup=secs -JregLoops=1 -l reg_results.jtl
+  -JtotalUsers=N -Jcsvfile=pool.csv -JregUsers=N -JregRampup=secs -JregLoops=1 -l reg_results.jtl
 
 # Phase 2 -- load-test login against that now-registered pool
 jmeter -n -t 202609HRv6_BoostRegistrationLoadTest.jmx \
   -Jcsvfile=pool.csv -JloginUsers=N -JloginRampup=secs -JloginLoops=cycles -l login_results.jtl
 ```
+
+`-JtotalUsers` must be passed explicitly in phase 1 and must match `-JregUsers`
+-- the Username Generator no longer infers a count from `regUsers`
+automatically. It used to, and that was a real bug: the generator thread
+group runs on *every* invocation regardless of which scenario you're
+targeting that run, so phase 2 (which deliberately passes `-JregUsers=0`)
+would silently regenerate the pool file with zero rows and wipe out the
+very identities phase 1 had just registered. Confirmed live before the fix
+(phase 2 failed with raw 400s from empty phone/ID fields) and confirmed
+fixed after (phase 2 then authenticated successfully). The generator now
+defaults to `count=0`/generate-nothing and leaves an existing pool file
+alone unless `-JtotalUsers` is set.
 
 - **Test 1 (baseline)**: small N (e.g. 10) through both phases, separately.
 - **Test 2 (progressive)**: re-run phase 2 with `-JloginUsers` stepped
@@ -64,6 +76,31 @@ jmeter -n -t 202609HRv6_BoostRegistrationLoadTest.jmx \
 - **Test 6 (spike) / 7 (stress) / 8 (soak)**: same phase-2 invocation, vary
   `-JloginUsers` / `-JloginLoops` / `-JloginRampup` -- no separate JMX needed.
 - **Test 3 (5,000-user mixed journey)**: blocked -- see below.
+
+### SA ID entropy ceiling: CONFIRMED LIVE, blocks the 5,000-identity target as-is
+
+Tested directly against `api-ppe.booost.com` on 2026-10-21 (full flow proof,
+see below) and hit this for real, unprompted: a freshly-generated identity
+on the fixed DOB=2000-01-01 bypass got **409 `identity_in_use`** on
+`/verify` -- *"This identity document is already registered to a different
+phone number"* -- despite never having used that ID in this session.
+
+Why: the bypass only works for that one literal DOB, which fixes `yymmdd`
+in the SA ID to `000101`. Citizen/gender digits are policy-fixed too, so
+the *only* free entropy is a 4-digit sequence number -- about **10,000
+valid distinct IDs, total, for every team that has ever used this
+convention against this PPE environment**, not 10,000 per run. Birthday-
+paradox math says 5,000 draws from a ~10,000-slot space produce collisions
+as the rule, not the exception.
+
+This is a test-tooling ceiling, not a BOOOST performance finding -- if
+tomorrow's progressive run shows rising 409/403 rates as user count climbs,
+that's this artifact, not the app degrading under load. **Needs resolving
+with the backend/MIS team before the 5,000-user registration numbers can be
+trusted**: either a wider/dedicated bypass range for the test window, a
+pre-allocated ID block, or retry-on-collision logic added to this script
+(not built yet, flagged for a decision rather than built silently, since it
+changes what the registration numbers actually mean).
 
 ### Rate limit: the thing most likely to quietly break tomorrow's numbers
 
@@ -97,13 +134,33 @@ all real, use JMeter's `ThroughputController` in "Percent Executions" mode
 per branch -- not done here, since wiring up a weighted controller for 7
 branches that can't run yet would be complexity with nothing real to weight.
 
-### Not independently verified
+### Verified live against api-ppe.booost.com (2026-10-21)
 
-I don't have JMeter installed locally, so this plan has been checked for
-XML well-formedness and structural consistency with the original working
-file, but **not actually run**. Before relying on it for tomorrow's test,
-open it once in the JMeter GUI (or a short `-n` dry run with a tiny
-`-JregUsers`/`-JloginUsers`) to confirm it loads and executes as expected.
+Installed JMeter 5.6.3 + JDK 17 and ran the actual plan, not just an XML
+check, for one real user through each real thread group:
+
+- **Registration (1 user)**: `Username Generator` -> `POST /v1/auth/otp` 200
+  -> `POST /v1/auth/verify` 200 -> `POST /v1/identity/register` **201
+  Created** -> `GET /v1/identity/status` 200. All four real HTTP samples
+  succeeded, 0 errors.
+- **Login (1 user, same now-registered identity)**: `POST /v1/auth/otp` 200
+  -> `POST /v1/auth/verify` (hit the SA ID collision above on this
+  particular identity, a real account-state conflict, not a script
+  defect -- see the finding above) -> `GET /v1/identity/profile` correctly
+  401'd once `/verify` didn't return a usable access_token, exactly the
+  dependent-failure behaviour the custom assertion messages are meant to
+  surface.
+- Along the way this caught and fixed a real bug: the Username Generator
+  ran unconditionally on every invocation and, when phase 2 passed
+  `-JregUsers=0`, regenerated the pool file with zero rows -- silently
+  wiping the identity phase 1 had just registered. Fixed by making
+  generation opt-in via `-JtotalUsers` (see above); re-ran the full
+  two-phase sequence afterward and confirmed phase 2 then read the correct
+  pool row.
+
+Not yet run at real scale (hundreds/thousands of users) or for the
+Payments/Mixed Journey groups -- this was a correctness check of the flow
+logic, not a dry run of tomorrow's actual load.
 
 ### It already generates its own test users -- worth reusing, not rebuilding
 
