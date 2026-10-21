@@ -2450,16 +2450,6 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
         </CSVDataSet>
         <hashTree/>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="20pct_LoginAuth">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>20.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="MJ_20pct_LoginAuth (real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -2533,18 +2523,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="20pct_Home">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>20.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="MJ_20pct_Home (DashboardPage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -2591,18 +2570,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="20pct_FutureBoost">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>20.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="MJ_20pct_FutureBoost (FutureBoostPage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -2649,18 +2617,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="10pct_BalanceHistory">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>10.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="MJ_10pct_BalanceHistory (BalancePage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -2708,18 +2665,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="10pct_Deals">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>10.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="MJ_10pct_Deals (DealsPage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -2766,18 +2712,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="5pct_VoucherBrowsing">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>5.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="MJ_5pct_VoucherBrowsing (BoostBuyPage, CONFIRMED real -- browse only, no purchase)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -2824,18 +2759,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="5pct_BAM">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>5.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="MJ_5pct_BAM (BoostAMillionPage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -2882,18 +2806,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="5pct_PartnerLoyalty">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>5.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="MJ_5pct_PartnerLoyalty (PartnerList, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -2940,18 +2853,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="5pct_ProfileSettings">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>5.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="MJ_5pct_ProfileSettings (real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -2988,7 +2890,6 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             </ResponseAssertion>
             <hashTree/>
           </hashTree>
-        </hashTree>
         </hashTree>
 
         <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="Think Time">
@@ -3040,16 +2941,6 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
         </CSVDataSet>
         <hashTree/>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="20pct_Soak_LoginAuth">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>20.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Soak_LoginAuth (real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -3123,18 +3014,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="20pct_Soak_Home">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>20.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Soak_Home (DashboardPage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -3181,18 +3061,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="20pct_Soak_FutureBoost">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>20.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Soak_FutureBoost (FutureBoostPage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -3239,18 +3108,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="10pct_Soak_BalanceHistory">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>10.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Soak_BalanceHistory (BalancePage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -3298,18 +3156,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="10pct_Soak_Deals">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>10.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Soak_Deals (DealsPage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -3356,18 +3203,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="5pct_Soak_VoucherBrowsing">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>5.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Soak_VoucherBrowsing (BoostBuyPage, CONFIRMED real -- browse only, no purchase)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -3414,18 +3250,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="5pct_Soak_BAM">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>5.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Soak_BAM (BoostAMillionPage, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -3472,18 +3297,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="5pct_Soak_PartnerLoyalty">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>5.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Soak_PartnerLoyalty (PartnerList, CONFIRMED real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -3530,18 +3344,7 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             <hashTree/>
           </hashTree>
         </hashTree>
-        </hashTree>
 
-        <ThroughputController guiclass="ThroughputControllerGui" testclass="ThroughputController" testname="5pct_Soak_ProfileSettings">
-          <intProp name="ThroughputController.style">1</intProp>
-          <boolProp name="ThroughputController.perThread">false</boolProp>
-          <FloatProperty>
-            <name>ThroughputController.percentThroughput</name>
-            <value>5.0</value>
-            <savedValue>0.0</savedValue>
-          </FloatProperty>
-        </ThroughputController>
-        <hashTree>
         <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="Soak_ProfileSettings (real)">
           <boolProp name="TransactionController.parent">true</boolProp>
           <boolProp name="TransactionController.includeTimers">false</boolProp>
@@ -3578,7 +3381,6 @@ vars.put("createdDate", Instant.now().toString())</stringProp>
             </ResponseAssertion>
             <hashTree/>
           </hashTree>
-        </hashTree>
         </hashTree>
 
         <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="Think Time">
