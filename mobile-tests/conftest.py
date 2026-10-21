@@ -8,7 +8,7 @@ from boost_actions import APP_ID, HUB_URL
 
 
 @pytest.fixture
-def driver():
+def driver(request):
     options = UiAutomator2Options()
     options.platform_name = "Android"
     options.app = APP_ID
@@ -19,7 +19,14 @@ def driver():
         "platformVersion": os.environ.get("LT_PLATFORM_VERSION", "13"),
         "isRealMobile": True,
         "build": "pytest-mobile-tests",
-        "name": "boost-app-tests",
+        # request.node.name is the actual test function name, already
+        # including the parametrize id in brackets for data-driven tests
+        # (e.g. "test_purchase_scenario_completes[plato_coffee_card_saved]")
+        # -- every session on the LambdaTest dashboard used to show up as
+        # the same "boost-app-tests" regardless of which test ran, making
+        # it impossible to tell sessions apart without cross-referencing
+        # timestamps.
+        "name": request.node.name,
     })
     d = webdriver.Remote(HUB_URL, options=options)
     yield d

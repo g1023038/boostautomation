@@ -56,7 +56,11 @@ public final class BoostActionsRunner {
         state.cardHolderName = getenvOr("CARD_HOLDER_NAME", "Test User");
         state.completePurchase = Boolean.parseBoolean(getenvOr("COMPLETE_PURCHASE", "true"));
 
-        AndroidDriver driver = DriverFactory.createDriver("boost-actions", String.join("+", steps));
+        // Own build name, not boost_actions.py's "boost-actions" -- same
+        // reason BaseTest.java has its own: sharing a build name across
+        // the two languages' runners makes LambdaTest's dashboard unable
+        // to tell them apart.
+        AndroidDriver driver = DriverFactory.createDriver("boost-actions-java", String.join("+", steps));
         ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
         try {
             for (String step : steps) {
