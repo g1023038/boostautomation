@@ -147,6 +147,31 @@ no other changes needed -- the request bodies were accepted as well-formed
 JSON by whatever served the 404 (it routed and rejected on path, not on
 body).
 
+**Leading candidate host, still unconfirmed (2026-10-21)**: tried
+`api-ppe.booost.com/v2/graphql`, `api-ppe.booost.com/bff/graphql`,
+`apic-ppe.booost.com/graphql`, `bff-ppe.booost.com/graphql`, and
+`graphql-ppe.booost.com/graphql`. `bff-ppe`/`graphql-ppe` don't resolve in
+DNS at all. `api-ppe`'s own `/v2` and `/bff` sub-paths gave the identical
+plain 404 as `/graphql`, ruling those out too. **`apic-ppe.booost.com`
+does resolve and sits behind Cloudflare like a real production API
+gateway** -- but both a scripted request and a plain browser GET got a
+**Cloudflare WAF block** (*"Sorry, you have been blocked ... submitting a
+certain word or phrase, a SQL command or malformed data"*), not a 404 and
+not a solvable bot-challenge. That's a security control actively
+rejecting the request, not a routing problem -- deliberately not probed
+further with different payloads/headers to get past it, since that
+crosses from "find the right host" into "bypass a WAF," which isn't
+something to script around. Confirming `apic-ppe.booost.com` (or finding
+the real one) needs one of:
+- the `boost-mobile` app's own PPE config -- search its env files for
+  `GRAPHQL_URL` / `BFF_URL` / `API_GATEWAY_URL` (likely `src/config/`,
+  `env/`, `.env.ppe`, or `environments/ppe.ts`)
+- the in-app diagnostics screen -- tap the environment indicator in the
+  app header (per the Build 38/40 release notes) to see the exact active
+  endpoint URLs
+- asking whoever manages Cloudflare/the BFF's WAF rules to allowlist the
+  load-test source for the test window
+
 `4 - Mixed Journey` (Test 3's weighted 20/20/20/10/10/5/5/5/5 workload)
 still has these same 7 journeys as disabled TODO placeholders, not yet
 replaced with the real GraphQL calls now built into group 2 -- deferred
