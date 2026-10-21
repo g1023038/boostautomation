@@ -10,7 +10,9 @@ SA ID ENTROPY CEILING -- CONFIRMED LIVE, BLOCKS THE 5,000-IDENTITY TARGET AS-IS 
 
 GRAPHQL GATEWAY NOT REACHABLE AS SPECIFIED -- CONFIRMED LIVE (2026-10-21): Scenarios 3-9 (Home, Balance/History, Future Boost, Vouchers, Deals, BAM, Partner/Loyalty) are wired up per the Oct 2026 scope doc's exact GraphQL schema, but POST https://api-ppe.booost.com/graphql returns 404 with a plain-text body of "404 page not found" -- not a GraphQL error, not even JSON. That's the signature of a server with literally no route registered at that path, not an application-level problem these samplers can work around. The scope doc itself hedged on this ("Gateway / BFF Root: https://api-ppe.booost.com (or your target environment gateway)"), so the real gateway host for PPE needs confirming before any of Scenarios 3-9 can be trusted. Every GraphQL sampler's domain is independently overridable via -JgraphqlHost (defaults to ${host}, confirmed working by pointing it at a throwaway host and seeing the sampler's URL change accordingly) -- once the real gateway is known, re-point with -JgraphqlHost=the-real-host and re-run; the request bodies/queries themselves don't need touching, they were accepted as well-formed JSON by whatever served the 404 (it routed and rejected on path, not on body).
 
-LEADING CANDIDATE HOST, STILL UNCONFIRMED (2026-10-21): tried api-ppe.booost.com/v2/graphql, api-ppe.booost.com/bff/graphql, apic-ppe.booost.com/graphql, bff-ppe.booost.com/graphql, graphql-ppe.booost.com/graphql. bff-ppe and graphql-ppe don't resolve in DNS at all. api-ppe's own /v2 and /bff sub-paths gave the identical plain "404 page not found" as /graphql, confirming that host has no other routes to find. apic-ppe.booost.com DOES resolve and sits behind Cloudflare like a real production API gateway -- but both a scripted POST and a plain browser GET got a Cloudflare WAF block ("Sorry, you have been blocked ... submitting a certain word or phrase, a SQL command or malformed data"), not a 404 and not a bot-challenge. That's a security control actively rejecting the request, not a routing problem -- deliberately not probed further with different payloads/headers to get past it, since that crosses from "find the right host" into "bypass a WAF". Confirming apic-ppe.booost.com (or finding the real one) needs either: the boost-mobile app's own PPE config (search its env files for GRAPHQL_URL/BFF_URL/API_GATEWAY_URL), the in-app diagnostics screen (tap the environment indicator in the app header, per the Build 38/40 release notes), or asking whoever manages Cloudflare/the BFF's WAF rules to allowlist the load-test source for the test window.
+LEADING CANDIDATE HOST, STILL UNCONFIRMED (2026-10-21): tried api-ppe.booost.com/v2/graphql, api-ppe.booost.com/bff/graphql, api-ppe.booost.com/api/graphql, apic-ppe.booost.com/graphql, apic-ppe.booost.com/api/graphql, apic-ppe.booost.com/v1/graphql, bff-ppe.booost.com/graphql, graphql-ppe.booost.com/graphql, auth-ppe.booost.com. bff-ppe, graphql-ppe, and auth-ppe don't resolve in DNS at all from here -- a pen-test ticket (BOOST-7553, July 2026) names bff-ppe.booost.com and auth-ppe.booost.com as the mobile app's PPE API domains, but neither is publicly resolvable now, likely internal/VPN-only or stale since that ticket. api-ppe's own /v2, /bff, and /api sub-paths all gave the identical plain "404 page not found" as /graphql, confirming that host has no other routes to find. apic-ppe.booost.com DOES resolve and sits behind Cloudflare like a real production gateway, but EVERY path tried there (including with a real Bearer access_token from the proven login flow) got the same generic Cloudflare challenge/block page regardless of whether the path is real -- Cloudflare is rejecting at the edge uniformly, so no path on this host can be distinguished from another by probing it, and deliberately not pushed further since that's a security control, not a routing question. Both graphqlHost and graphqlPath are independently -J overridable (confirmed live) for whenever the real host+path is confirmed -- likely only resolvable by being on the corporate VPN, from the boost-mobile app's own PPE env config, the in-app diagnostics screen (Build 38/40 release notes), or directly asking David Irvine / Kgolane Thulare (BOOST-7553's authors).
+
+QUERY SHAPES ARE ALSO UNVERIFIED, NOT JUST THE HOST: the field names in these 10 GraphQL samplers (homeDashboard, futureBoost, wallet, voucherCatalogue, deals, boostAMillion, partners, etc.) came from the Oct 2026 scope doc as illustrative examples, never checked against the actual BFF schema -- they will likely fail (GraphQL error, not 404) even once the host is fixed. Finding the host does not mean Scenarios 3-9 are then done; after that, pull the real schema (introspection query against queryType.fields, if the gateway allows it) or capture the actual queries the PPE app sends (proxy capture, or the query files in the boost-mobile iOS/Android repos) and update these 10 samplers' bodies to match before trusting their results.
 
 HOW TO RUN EACH SCENARIO -- one parameterized plan, scenario selection is via thread-count properties (0 = that group does nothing), not by hand-editing the file:
 
@@ -102,6 +104,11 @@ left to wire there.</stringProp>
           <elementProp name="graphqlHost" elementType="Argument">
             <stringProp name="Argument.name">graphqlHost</stringProp>
             <stringProp name="Argument.value">${__P(graphqlHost,${host})}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="graphqlPath" elementType="Argument">
+            <stringProp name="Argument.name">graphqlPath</stringProp>
+            <stringProp name="Argument.value">${__P(graphqlPath,/graphql)}</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
         </collectionProp>
@@ -722,7 +729,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
           <hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Home Dashboard)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -769,7 +776,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
           <hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Wallet Balances)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -809,7 +816,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
             </hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Transaction History)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -857,7 +864,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
           <hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Future Boost L1 Summary)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -897,7 +904,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
             </hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Future Boost L2 Breakdown)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -944,7 +951,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
           <hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Voucher Catalogue)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -984,7 +991,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
             </hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Voucher Detail)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -1032,7 +1039,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
           <hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Deals List)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -1079,7 +1086,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
           <hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (BAM Dashboard)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -1126,7 +1133,7 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
           <hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /graphql (Partner Directory)">
               <stringProp name="HTTPSampler.domain">${graphqlHost}</stringProp>
-              <stringProp name="HTTPSampler.path">/graphql</stringProp>
+              <stringProp name="HTTPSampler.path">${graphqlPath}</stringProp>
               <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
               <stringProp name="HTTPSampler.method">POST</stringProp>
               <boolProp name="HTTPSampler.use_keepalive">true</boolProp>

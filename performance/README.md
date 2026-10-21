@@ -148,29 +148,42 @@ JSON by whatever served the 404 (it routed and rejected on path, not on
 body).
 
 **Leading candidate host, still unconfirmed (2026-10-21)**: tried
-`api-ppe.booost.com/v2/graphql`, `api-ppe.booost.com/bff/graphql`,
-`apic-ppe.booost.com/graphql`, `bff-ppe.booost.com/graphql`, and
-`graphql-ppe.booost.com/graphql`. `bff-ppe`/`graphql-ppe` don't resolve in
-DNS at all. `api-ppe`'s own `/v2` and `/bff` sub-paths gave the identical
-plain 404 as `/graphql`, ruling those out too. **`apic-ppe.booost.com`
-does resolve and sits behind Cloudflare like a real production API
-gateway** -- but both a scripted request and a plain browser GET got a
-**Cloudflare WAF block** (*"Sorry, you have been blocked ... submitting a
-certain word or phrase, a SQL command or malformed data"*), not a 404 and
-not a solvable bot-challenge. That's a security control actively
-rejecting the request, not a routing problem -- deliberately not probed
-further with different payloads/headers to get past it, since that
-crosses from "find the right host" into "bypass a WAF," which isn't
-something to script around. Confirming `apic-ppe.booost.com` (or finding
-the real one) needs one of:
-- the `boost-mobile` app's own PPE config -- search its env files for
-  `GRAPHQL_URL` / `BFF_URL` / `API_GATEWAY_URL` (likely `src/config/`,
-  `env/`, `.env.ppe`, or `environments/ppe.ts`)
-- the in-app diagnostics screen -- tap the environment indicator in the
-  app header (per the Build 38/40 release notes) to see the exact active
-  endpoint URLs
-- asking whoever manages Cloudflare/the BFF's WAF rules to allowlist the
-  load-test source for the test window
+`api-ppe.booost.com/v2/graphql`, `/bff/graphql`, `/api/graphql`,
+`apic-ppe.booost.com/graphql`, `/api/graphql`, `/v1/graphql`,
+`bff-ppe.booost.com/graphql`, `graphql-ppe.booost.com/graphql`, and
+`auth-ppe.booost.com`. A pen-test ticket (BOOST-7553, July 2026) names
+`bff-ppe.booost.com` and `auth-ppe.booost.com` as the mobile app's PPE API
+domains -- but **neither resolves in public DNS**, confirmed independently
+on two different machines/networks, so they're either internal/VPN-only
+or stale since July. `api-ppe.booost.com`'s own `/v2`, `/bff`, and `/api`
+sub-paths all gave the identical plain 404 as `/graphql`, ruling those out
+too. **`apic-ppe.booost.com` does resolve and sits behind Cloudflare like
+a real production gateway** -- but every path tried there, including with
+a real `Bearer` token from the proven login flow, got the same generic
+Cloudflare challenge/block regardless of whether the path is valid.
+Cloudflare is rejecting at the edge uniformly, so no amount of path
+guessing on this host can distinguish real from wrong -- deliberately not
+pushed further, since that's a security control, not a routing question.
+
+Both `-JgraphqlHost` and `-JgraphqlPath` are independently overridable
+(both confirmed live) for whenever the real host+path turns up. Likely
+only resolvable by: being on the corporate VPN, the `boost-mobile` app's
+own PPE env config (`GRAPHQL_URL`/`BFF_URL`/`API_GATEWAY_URL` in
+`src/config/`, `.env.ppe`, or `environments/ppe.ts`), the in-app
+diagnostics screen (tap the environment indicator, per Build 38/40
+release notes), or directly asking David Irvine / Kgolane Thulare
+(BOOST-7553's authors).
+
+**Finding the host isn't the whole fix** -- the 10 GraphQL query shapes in
+these samplers (`homeDashboard`, `futureBoost`, `wallet`,
+`voucherCatalogue`, `deals`, `boostAMillion`, `partners`, etc.) are
+illustrative examples from the scope doc, never checked against the real
+BFF schema. They'll likely fail with a GraphQL error (not a 404) even once
+the host is right. Once reachable: pull the real schema via introspection
+(if the gateway allows it) or capture the actual queries the PPE app sends
+(proxy capture, or the query files in the `boost-mobile` iOS/Android
+repos), then update these samplers' bodies to match before trusting the
+results.
 
 `4 - Mixed Journey` (Test 3's weighted 20/20/20/10/10/5/5/5/5 workload)
 still has these same 7 journeys as disabled TODO placeholders, not yet
