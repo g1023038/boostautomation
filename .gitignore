@@ -6,3 +6,6 @@ run_log*.txt
 result.json
 __pycache__/
 *.pyc
+
+# Maven build output (mobile-tests-java/)
+target/

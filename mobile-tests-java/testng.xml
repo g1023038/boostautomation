@@ -1,0 +1,9 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="BoostMobileSuite">
+  <test name="BoostMobileTests">
+    <classes>
+      <class name="com.boostautomation.tests.BalanceTest"/>
+      <class name="com.boostautomation.tests.PurchaseTest"/>
+    </classes>
+  </test>
+</suite>
