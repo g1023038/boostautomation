@@ -12,18 +12,35 @@ Confluence directly (no native JMeter-to-Jira integration exists, confirmed).
 ## `202609HRv6_BoostRegistrationLoadTest.jmx`
 
 "BOOOST Performance Test Suite" -- moved here from a local download, rebuilt
-against the boost-auth-api Mobile Integration Guide and the Oct 2026 PPE
-performance brief (4,000-5,000 expected users, payments out of scope for
-that round). One plan, four thread groups, scenario selection is entirely
-via `-J` thread-count properties (0 threads = that group does nothing) so
-nothing needs hand-editing between runs:
+against the boost-auth-api Mobile Integration Guide, the confirmed GraphQL
+gateway, and the Oct 2026 PPE performance brief (4,000-5,000 expected
+users, payments out of scope for that round). One plan, **one named thread
+group per test** from the brief (not one group reused across tests via
+parameters) -- each is independently toggleable by its own thread-count
+property (0 = that group does nothing), so running a specific test is
+just setting its one property, no need to remember which properties to
+zero out on a shared group:
 
-| Thread group | Covers (brief's priority) | Threads property |
+| Thread group | Test | Threads property |
 |---|---|---|
-| `1 - Registration Load` | Registration (P0 #2) | `-JregUsers` |
-| `2 - Login Authentication` | Login/auth (P0 #1) + the full Core Browsing Loop (Home, Balance/History, Future Boost, Vouchers, Deals, BAM, Partner/Loyalty, Profile) + logout | `-JloginUsers` |
-| `3 - Payments Order Flow` | out of scope this round, kept for later | `-JpayUsers` (default 0) |
-| `4 - Mixed Journey` | Test 3's 5,000-user mixed workload | `-JmixedUsers` (mostly placeholders, see below) |
+| `Baseline` | Test 1 -- Login + Profile + Logout at low N (Home/Future Boost live in Progressive Load, not duplicated here) | `-JbaselineUsers` |
+| `Registration Load` | Test 5 (also P0 #2, also Test 1's registration baseline at low N) | `-JregUsers` |
+| `Progressive Load` | Test 2 -- Login/auth + the full Core Browsing Loop (Home, Balance/History, Future Boost, Vouchers, Deals, BAM, Partner/Loyalty, Profile) + Logout, stepped 250-5,000 | `-JprogUsers` |
+| `Mixed Journey (5000 User)` | Test 3 -- weighted 9-branch workload (see below) | `-JmixedUsers` |
+| `Login Spike` | Test 4 -- concentrated auth only (otp+verify), no Profile/Logout | `-JloginSpikeUsers` |
+| `Spike Test` | Test 6 -- Login + Profile + Logout, up-then-down shape | `-JspikeUsers` |
+| `Stress Test (Beyond 5000)` | Test 7 -- same content as Spike Test, pushed past 5,000 | `-JstressUsers` |
+| `Soak Endurance` | Test 8 -- same weighted content as Mixed Journey, duration-based instead of loop-count-based | `-JsoakUsers` + `-JsoakDuration` (seconds) |
+| `Payments Order Flow` | out of scope this round, kept for later | `-JpayUsers` (default 0) |
+
+Progressive Load, Spike Test, and Stress Test share near-identical content
+(same login+browsing sequence, different thread count/ramp/purpose) --
+that's deliberate duplication, not drift: JMeter has no way to share logic
+across thread groups that can be hand-written reliably outside the GUI (a
+Test Fragment + Module Controller proof-of-concept was tried live and its
+node_path reference couldn't be resolved after several attempts), so each
+test gets its own real, independently-verified copy rather than one group
+driven by easy-to-misremember parameter combinations.
 
 Every request now carries `X-App-Version` and `X-Platform` (both
 `-J`-overridable, default `1.0.1`/`android`) alongside the existing
@@ -45,18 +62,20 @@ jmeter -g results.jtl -o dashboard/
 
 ### How to run each scenario from the brief
 
-Two-phase for anything involving Login: a pool of identities has to actually
-be registered (phase 1) before it can be used to test *login* (phase 2) --
-you cannot log in as someone who was never registered.
+Two-phase for anything that logs in (Baseline, Progressive Load, Login
+Spike, Spike Test, Stress Test, Mixed Journey, Soak Endurance): a pool of
+identities has to actually be registered first -- you cannot log in as
+someone who was never registered.
 
 ```
 # Phase 1 -- register N fresh identities, creates pool.csv
 jmeter -n -t 202609HRv6_BoostRegistrationLoadTest.jmx \
   -JtotalUsers=N -Jcsvfile=pool.csv -JregUsers=N -JregRampup=secs -JregLoops=1 -l reg_results.jtl
 
-# Phase 2 -- load-test login against that now-registered pool
+# Phase 2 -- run whichever named test you want against that now-registered pool,
+# e.g. Progressive Load:
 jmeter -n -t 202609HRv6_BoostRegistrationLoadTest.jmx \
-  -Jcsvfile=pool.csv -JloginUsers=N -JloginRampup=secs -JloginLoops=cycles -l login_results.jtl
+  -Jcsvfile=pool.csv -JprogUsers=N -JprogRampup=secs -JprogLoops=cycles -l prog_results.jtl
 ```
 
 `-JtotalUsers` must be passed explicitly in phase 1 and must match `-JregUsers`
@@ -71,17 +90,25 @@ fixed after (phase 2 then authenticated successfully). The generator now
 defaults to `count=0`/generate-nothing and leaves an existing pool file
 alone unless `-JtotalUsers` is set.
 
-- **Test 1 (baseline)**: small N (e.g. 10) through both phases, separately.
-- **Test 2 (progressive)**: re-run phase 2 with `-JloginUsers` stepped
+- **Test 1 (baseline)**: `-JbaselineUsers=10` (phase 2), plus `-JregUsers=10`
+  on its own phase-1-only run for the registration baseline.
+- **Test 2 (progressive)**: `-JprogUsers` stepped
   250/500/1000/2000/3000/4000/5000 against the *same* pool (`CSVDataSet`
   recycles rows).
-- **Test 4 (login spike)**: short `-JloginRampup` (concentrated) at
-  500/1000/2000.
-- **Test 5 (registration load)**: step `-JregUsers` 100/250/500/1000, fresh
-  pool each step.
-- **Test 6 (spike) / 7 (stress) / 8 (soak)**: same phase-2 invocation, vary
-  `-JloginUsers` / `-JloginLoops` / `-JloginRampup` -- no separate JMX needed.
-- **Test 3 (5,000-user mixed journey)**: blocked -- see below.
+- **Test 3 (5,000-user mixed journey)**: `-JmixedUsers=5000` -- 5 of 9
+  branches are real and confirmed (see below), 4 remain placeholders.
+- **Test 4 (login spike)**: `-JloginSpikeUsers` stepped 500/1000/2000, short
+  `-JloginSpikeRampup` (concentrated).
+- **Test 5 (registration load)**: `-JregUsers` stepped 100/250/500/1000,
+  fresh pool each step.
+- **Test 6 (spike)**: `-JspikeUsers` through the shape
+  500 -> 1000 -> 4000 -> 1000 as separate invocations, watching recovery on
+  the final low-load step.
+- **Test 7 (stress beyond 5,000)**: `-JstressUsers` stepped
+  4000/5000/6000/7000+.
+- **Test 8 (soak)**: `-JsoakUsers=N -JsoakDuration=seconds` -- duration-based
+  (confirmed live: a 15s run produced multiple looped iterations within the
+  window, not a single pass), not loop-count-based like the others.
 
 ### SA ID entropy ceiling: CONFIRMED LIVE, blocks the 5,000-identity target as-is
 
@@ -121,122 +148,86 @@ that scale -- not reusing a smaller pool. Also flag the per-IP limit to the
 backend team before tomorrow: if the JMeter load generators share only a
 handful of egress IPs, 10/hour per IP can trip even with a large phone pool.
 
-### GraphQL gateway not reachable as specified -- CONFIRMED LIVE, blocks Scenarios 3-9
+### GraphQL gateway: FOUND AND CONFIRMED LIVE (2026-10-21)
 
-The Oct 2026 BFF/GraphQL scope doc provided the missing endpoints for Home,
-Balance/History, Future Boost, Vouchers (browse only), Deals, BAM, and
-Partner/Loyalty -- all served through one gateway, `POST /graphql`. All
-seven are now built into `2 - Login Authentication` as real GraphQL
-samplers (toggle the whole loop with `-JincludeBrowsing=false` if a run
-needs bare login only), using the exact queries/variables from that doc.
+The journey was: `api-ppe.booost.com/graphql` (plain 404, no route at all)
+-> `apic-ppe.booost.com` (real host, but every path uniformly Cloudflare-
+blocked, a security control, deliberately not pushed past) -> the real
+answer, handed over directly: **host `app-ppe.booost.com`, path `/v2/`**.
+Confirmed independently with a fresh `access_token` from the proven login
+flow: `POST https://app-ppe.booost.com/v2/` with a `DashboardPage` query
+returned 200 with real PPE data (real voucher/deal/history rows).
+`-JgraphqlHost`/`-JgraphqlPath` now default to these confirmed values
+(still overridable if the gateway ever moves).
 
-Tested live and the gateway itself isn't reachable yet: `POST
-https://api-ppe.booost.com/graphql` returns **404** with a plain-text body
-of `"404 page not found"` -- not a GraphQL error, not JSON at all. That's
-the signature of a server with no route registered at that path, not
-something a correctly-formed request can work around. The scope doc itself
-hedged on the host (*"Gateway / BFF Root: `https://api-ppe.booost.com` (or
-your target environment gateway)"*), so this needs the real PPE gateway
-host confirmed before Scenarios 3-9 can be trusted.
+**3 of 9 Mixed Journey branches (5 of 10 total GraphQL-backed scenarios)
+are now real queries, confirmed live through this exact JMX file, not just
+ad-hoc requests:**
 
-Each GraphQL sampler's domain is independently overridable via
-`-JgraphqlHost` (defaults to `${host}`) -- confirmed working by pointing it
-at a throwaway host and verifying the sampler's actual request URL changed
-accordingly. Once the real gateway is known: `-JgraphqlHost=the-real-host`,
-no other changes needed -- the request bodies were accepted as well-formed
-JSON by whatever served the 404 (it routed and rejected on path, not on
-body).
+| Scenario | Real query | Confirmed where |
+|---|---|---|
+| Home | `DashboardPage` (header, badges, tapTapBoosts, vouchers, deals, history, legal) | Progressive Load, Mixed Journey, Soak |
+| Voucher Browsing | `BoostBuyPage` (promotion + legal only -- it's the landing page, not a catalogue; the earlier "Voucher Catalogue"/"Voucher Detail" split was wrong, replaced with this single real query) | Progressive Load, Mixed Journey, Soak |
+| BAM | `BoostAMillionPage` (promotion, stories, currentDrawPeriod with prompts/groups/entryMethods, completedDrawPeriods, howItWorks, legal) | Progressive Load, Mixed Journey, Soak |
+| Login/auth | `/v1/auth/otp` + `/v1/auth/verify` | all groups |
+| Profile/settings | `GET /v1/identity/profile` | all groups |
 
-**Leading candidate host, still unconfirmed (2026-10-21)**: tried
-`api-ppe.booost.com/v2/graphql`, `/bff/graphql`, `/api/graphql`,
-`apic-ppe.booost.com/graphql`, `/api/graphql`, `/v1/graphql`,
-`bff-ppe.booost.com/graphql`, `graphql-ppe.booost.com/graphql`, and
-`auth-ppe.booost.com`. A pen-test ticket (BOOST-7553, July 2026) names
-`bff-ppe.booost.com` and `auth-ppe.booost.com` as the mobile app's PPE API
-domains -- but **neither resolves in public DNS**, confirmed independently
-on two different machines/networks, so they're either internal/VPN-only
-or stale since July. `api-ppe.booost.com`'s own `/v2`, `/bff`, and `/api`
-sub-paths all gave the identical plain 404 as `/graphql`, ruling those out
-too. **`apic-ppe.booost.com` does resolve and sits behind Cloudflare like
-a real production gateway** -- but every path tried there, including with
-a real `Bearer` token from the proven login flow, got the same generic
-Cloudflare challenge/block regardless of whether the path is valid.
-Cloudflare is rejecting at the edge uniformly, so no amount of path
-guessing on this host can distinguish real from wrong -- deliberately not
-pushed further, since that's a security control, not a routing question.
+**Still unconfirmed, using the Oct 2026 scope doc's illustrative field
+names** (will likely fail with a GraphQL error, not a 404, since the
+gateway itself now resolves): Future Boost, Balance/History, Deals, Voucher
+Detail, Partner Directory. Worth checking before building separate queries
+for these: the confirmed `DashboardPage` response already returns
+`vouchers`/`deals`/`history` as sub-fields of the one dashboard query, so
+Balance/History and Deals may reuse `DashboardPage` rather than need
+dedicated queries of their own. Capture the actual queries the PPE app
+sends for the remaining screens (proxy capture, or the query files in the
+`boost-mobile` iOS/Android repos) before trusting those samplers.
 
-Both `-JgraphqlHost` and `-JgraphqlPath` are independently overridable
-(both confirmed live) for whenever the real host+path turns up. Likely
-only resolvable by: being on the corporate VPN, the `boost-mobile` app's
-own PPE env config (`GRAPHQL_URL`/`BFF_URL`/`API_GATEWAY_URL` in
-`src/config/`, `.env.ppe`, or `environments/ppe.ts`), the in-app
-diagnostics screen (tap the environment indicator, per Build 38/40
-release notes), or directly asking David Irvine / Kgolane Thulare
-(BOOST-7553's authors).
-
-**Finding the host isn't the whole fix** -- the 10 GraphQL query shapes in
-these samplers (`homeDashboard`, `futureBoost`, `wallet`,
-`voucherCatalogue`, `deals`, `boostAMillion`, `partners`, etc.) are
-illustrative examples from the scope doc, never checked against the real
-BFF schema. They'll likely fail with a GraphQL error (not a 404) even once
-the host is right. Once reachable: pull the real schema via introspection
-(if the gateway allows it) or capture the actual queries the PPE app sends
-(proxy capture, or the query files in the `boost-mobile` iOS/Android
-repos), then update these samplers' bodies to match before trusting the
-results.
-
-`4 - Mixed Journey` (Test 3's weighted 20/20/20/10/10/5/5/5/5 workload)
-still has these same 7 journeys as disabled TODO placeholders, not yet
-replaced with the real GraphQL calls now built into group 2 -- deferred
-until the gateway host is confirmed and group 2's version is proven to
-work end to end, rather than duplicating untested samplers a second time.
-Weighting them by the brief's percentages once they're real: JMeter's
-`ThroughputController` in "Percent Executions" mode per branch, not done
-here yet.
+`Mixed Journey (5000 User)` and `Soak Endurance` both now have these 5 real
+branches live (Login, Home, Voucher Browsing, BAM, Profile) alongside 4
+still-disabled TODO placeholders (Future Boost, Balance/History, Deals,
+Partner/Loyalty). Weighting the 9 branches by the brief's percentages
+(20/20/20/10/10/5/5/5/5) once all are real: JMeter's `ThroughputController`
+in "Percent Executions" mode per branch, not done here yet -- worth
+revisiting now that more than half the branches are confirmed.
 
 The Profile *write* (PATCH `/v1/identity/profile`) is documented too, but
 the brief says to keep profile/settings read-based for this round, so it
 stays unbuilt.
 
-### Verified live against api-ppe.booost.com (2026-10-21)
+### Verified live (2026-10-21)
 
 Installed JMeter 5.6.3 + JDK 17 and ran the actual plan, not just an XML
-check, for one real user through each real thread group:
+check:
 
-- **Registration (1 user)**: `Username Generator` -> `POST /v1/auth/otp` 200
-  -> `POST /v1/auth/verify` 200 -> `POST /v1/identity/register` **201
-  Created** -> `GET /v1/identity/status` 200. All four real HTTP samples
-  succeeded, 0 errors.
-- **Login (1 user, same now-registered identity)**: `POST /v1/auth/otp` 200
-  -> `POST /v1/auth/verify` (hit the SA ID collision above on this
-  particular identity, a real account-state conflict, not a script
-  defect -- see the finding above) -> `GET /v1/identity/profile` correctly
-  401'd once `/verify` didn't return a usable access_token, exactly the
-  dependent-failure behaviour the custom assertion messages are meant to
-  surface.
+- **Registration (1 user)**: `Username Generator` -> `otp` 200 -> `verify`
+  200 -> `register` **201 Created** -> `status` 200. 0 errors.
+- **Progressive Load (1 user)**: `otp` 200 -> `verify` 200 -> `Home`
+  (`DashboardPage`) **200** -> `Voucher Browsing` (`BoostBuyPage`) **200**
+  -> `BAM` (`BoostAMillionPage`) **200** -> `profile` 200 -> `logout` 204.
+  Full real journey, 0 errors, once the gateway host was confirmed.
+- **Mixed Journey (1 user)**: all 5 real branches in one run -- Login,
+  Home, Voucher Browsing, BAM, Profile -- all 200, 0 errors.
+- **Soak Endurance (1 user, 15s duration)**: confirmed the scheduler
+  mechanism itself works, not just the content -- 17 samples recorded
+  across ~18s of actual run time (several looped iterations within the
+  window), not a single pass sitting idle for the rest of the duration.
 - Along the way this caught and fixed a real bug: the Username Generator
-  ran unconditionally on every invocation and, when phase 2 passed
+  ran unconditionally on every invocation and, when a later run passed
   `-JregUsers=0`, regenerated the pool file with zero rows -- silently
-  wiping the identity phase 1 had just registered. Fixed by making
+  wiping an identity a prior run had just registered. Fixed by making
   generation opt-in via `-JtotalUsers` (see above); re-ran the full
-  two-phase sequence afterward and confirmed phase 2 then read the correct
+  two-phase sequence afterward and confirmed it then read the correct
   pool row.
+- Confirmed the `-JgraphqlHost`/`-JgraphqlPath` overrides work correctly
+  (separate from whether a given gateway is reachable) by pointing them at
+  a throwaway host and verifying the sampler's request URL changed to
+  match.
 
-- **Login + full Core Browsing Loop (1 user, fresh identity, re-tested
-  after the fix above)**: `otp` 200 -> `verify` 200 -> all 10 GraphQL
-  calls (Home, Wallet Balances, Transaction History, Future Boost L1+L2,
-  Voucher Catalogue+Detail, Deals, BAM, Partner Directory) **404** -- see
-  the GraphQL gateway finding above, this is the real, live result, not
-  a hypothetical -- `profile` 200 -> `logout` 204. Everything that isn't
-  the GraphQL gateway worked correctly, including the assertion messages
-  firing exactly as designed on the 404s.
-- Confirmed the `-JgraphqlHost` override itself works correctly (separate
-  from whether the real gateway is reachable) by pointing it at a
-  throwaway host and verifying the sampler's request URL changed to match.
-
-Not yet run at real scale (hundreds/thousands of users) or for the
-Payments/Mixed Journey groups -- this was a correctness check of the flow
-logic, not a dry run of tomorrow's actual load.
+Not yet run at real scale (hundreds/thousands of users), and Future Boost/
+Balance-History/Deals/Partner-Loyalty/Voucher-Detail/Payments remain
+unverified -- this was a correctness check of the flow logic and the newly
+confirmed gateway, not a dry run of tomorrow's actual load.
 
 ### It already generates its own test users -- worth reusing, not rebuilding
 
