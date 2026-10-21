@@ -26,11 +26,11 @@ zero out on a shared group:
 | `Baseline` | Test 1 -- Login + Profile + Logout at low N (Home/Future Boost live in Progressive Load, not duplicated here) | `-JbaselineUsers` |
 | `Registration Load` | Test 5 (also P0 #2, also Test 1's registration baseline at low N) | `-JregUsers` |
 | `Progressive Load` | Test 2 -- Login/auth + the full Core Browsing Loop (Home, Balance/History, Future Boost, Vouchers, Deals, BAM, Partner/Loyalty, Profile) + Logout, stepped 250-5,000 | `-JprogUsers` |
-| `Mixed Journey (5000 User)` | Test 3 -- weighted 9-branch workload (see below) | `-JmixedUsers` |
+| `Mixed Journey (5000 User)` | Test 3 -- 9-branch workload, all branches every iteration (see below) | `-JmixedUsers` |
 | `Login Spike` | Test 4 -- concentrated auth only (otp+verify), no Profile/Logout | `-JloginSpikeUsers` |
 | `Spike Test` | Test 6 -- Login + Profile + Logout, up-then-down shape | `-JspikeUsers` |
 | `Stress Test (Beyond 5000)` | Test 7 -- same content as Spike Test, pushed past 5,000 | `-JstressUsers` |
-| `Soak Endurance` | Test 8 -- same weighted content as Mixed Journey, duration-based instead of loop-count-based | `-JsoakUsers` + `-JsoakDuration` (seconds) |
+| `Soak Endurance` | Test 8 -- same 9-branch content as Mixed Journey, duration-based instead of loop-count-based | `-JsoakUsers` + `-JsoakDuration` (seconds) |
 | `Payments Order Flow` | out of scope this round, kept for later | `-JpayUsers` (default 0) |
 
 Progressive Load, Spike Test, and Stress Test share near-identical content
@@ -187,17 +187,13 @@ proves the "open detail"/"open partner" steps the brief's journeys ask
 for, not just the landing load.
 
 `Mixed Journey (5000 User)` and `Soak Endurance` both now have **all 9
-branches real, confirmed, and weighted by the brief's own percentages**
-(20/20/20/10/10/5/5/5/5) via a real `ThroughputController` per branch
-("Percent Executions" mode). Verified live over 30 iterations: 6/6/6/3/3/
-1/1/1/1 hits for the three 20% / two 10% / four 5% branches respectively --
-exactly proportional. (Counts don't sum to 30: `ThroughputController`
-doesn't guarantee a perfect partition at low iteration counts, some
-iterations fire no branch at all; ratios converge precisely at the 5,000-
-user scale this is meant for.) Each loop iteration now picks **one**
-branch per the weighting, not all 9 every time -- that's the actual mixed-
-workload behavior the brief asked for, not a sequential walk through every
-screen.
+branches real and confirmed**, each grouped under its own named
+`Transaction Controller` for per-branch latency reporting. The earlier
+percentage-weighted `ThroughputController` ("Percent Executions" mode,
+20/20/20/10/10/5/5/5/5 one-branch-per-iteration selection) was removed at
+request -- every branch now runs on **every** loop iteration (a full sweep
+of all 9, not a weighted pick of one), reported as 9 separate named
+transactions per iteration.
 
 The Profile *write* (PATCH `/v1/identity/profile`) is documented too, but
 the brief says to keep profile/settings read-based for this round, so it
@@ -219,10 +215,10 @@ check:
 - **Mixed Journey (1 user)**: all 9 of 9 branches in one run -- Login,
   Home, Future Boost, Balance/History, Deals, Voucher Browsing, BAM,
   Partner/Loyalty, Profile -- all 200, 0 errors.
-- **Mixed Journey weighting (1 user, 30 iterations)**: confirmed the real
-  `ThroughputController` weighting itself, not just the content -- 6/6/6/
-  3/3/1/1/1/1 hits across the 20/20/20/10/10/5/5/5/5 branches, exactly
-  proportional, each iteration firing one branch rather than all 9.
+- **Mixed Journey, Transaction Controller only (1 user, 3 iterations)**:
+  after removing the `ThroughputController` weighting, confirmed all 9
+  branches now fire on every iteration -- 3/3 hits each across all 9 named
+  transactions, 0 errors.
 - **Soak Endurance (1 user, 15s duration)**: confirmed the scheduler
   mechanism itself works, not just the content -- 17 samples recorded
   across ~18s of actual run time (several looped iterations within the
