@@ -28,6 +28,22 @@ GitHub secret comes through as an empty string, not an absent key).
 mvn test
 ```
 
+If `mvn test` fails immediately with a `SunCertPathBuilderException` /
+`unable to find valid certification path` before any device session
+starts, that's a local TLS-inspecting proxy (common on a corporate
+network) -- Java's own trust store doesn't have the proxy's cert, same
+root cause the Python suite hit (fixed there with `pip-system-certs`).
+Java can read Windows' own trusted cert store directly instead of
+needing a cert import:
+
+```
+mvn test -DargLine=-Djavax.net.ssl.trustStoreType=Windows-ROOT
+```
+
+Verified end to end on 2026-10-21: `BalanceTest` passed against a real
+Galaxy S23 on LambdaTest (login, OTP entry, balance read all succeeded)
+once that flag was set.
+
 For the one-off/chat-triggered equivalent of `python boost_actions.py`:
 
 ```
