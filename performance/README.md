@@ -265,12 +265,34 @@ name, email) and writes them to a CSV the main flow consumes via
 
 - SA ID numbers are built with a real Luhn-variant checksum, so they pass
   server-side validation as well-formed IDs.
-- DOB is fixed at `2000-01-01` by default specifically because dev/PPE skips
-  SMS delivery for that DOB and accepts any 6-digit OTP (`123456` is sent) --
-  that's *why* `/auth/otp` -> `/auth/verify` works here with zero real SMS
-  involved, not a JMeter trick.
+- The SA ID's own encoded birthdate (`idDobStart`/`idDobEnd`, default
+  1930-1950) is independent of the `date_of_birth` field actually sent to
+  BOOOST -- this keeps the ID itself looking like a real adult's instead of
+  every single generated ID starting with the same `000101` segment.
+- DOB sent to the API is fixed at `2000-01-01` by default specifically
+  because dev/PPE skips SMS delivery for that DOB and accepts any 6-digit
+  OTP (`123456` is sent) -- that's *why* `/auth/otp` -> `/auth/verify` works
+  here with zero real SMS involved, not a JMeter trick. Unchanged by the
+  idDobStart/idDobEnd split above.
 - Phone numbers are synthesized in valid `+27` E.164 format from real SA
   mobile prefixes.
+
+**Master registered-users file**: `Registration Load` appends every identity
+it confirms is a genuine registered member (either path: just-registered via
+`03_Register`, or already-registered -- `registered==true` on `/verify`) to
+a second, never-overwritten CSV (`-JmasterCsv`, default `all_testusers.csv`),
+distinct from the per-run pool (`-Jcsvfile`, overwritten each run). This is
+the fix for the gap found 2026-10-21: most of the original `testusers.csv`'s
+100 rows turned out to be OTP-valid but never-registered identities (see
+"Verified live" below) -- only identities CONFIRMED registered end up in the
+master file, so it's safe to point any Mixed Journey/Progressive
+Load/Soak run's `-Jcsvfile` at it later and know every row is a real,
+already-registered member. Thread-safe (`synchronized` file append, verified
+under 3 concurrent registration threads with zero interleaved/corrupted
+rows). Not de-duplicated across separate runs -- `Registration Load`'s own
+CSV (`recycle=false`, `stopThread=true`) only ever feeds it fresh identities
+within a single pool, so this isn't a practical gap for how the group is
+meant to be used.
 
 This is directly relevant to the mobile suite's long-standing gap (see
 `../mobile-tests/README.md` / `ARCHITECTURE.md`): `mobile-tests/` and
@@ -294,3 +316,17 @@ skip-guards in `test_buy_with_boost_points` / the split-payment scenario --
 unless there's a known seed/promo mechanism for newly registered PPE
 accounts, which hasn't been confirmed. Worth asking before building on this
 assumption.
+
+**Known issue (pre-existing, not introduced by any change here):**
+`Registration Load` throws a `NullPointerException` in JMeter's own
+`TransactionController.nextWithTransactionSampler` at thread-end whenever
+run with 2+ concurrent threads (confirmed reproducible with the
+master-CSV feature fully disabled, so it's unrelated to that addition).
+It happens strictly after all real HTTP work for that thread has already
+completed -- sample results, error counts (`Err: 0.00%`), and the
+generated/master CSVs are all unaffected and verified correct across
+several runs -- but it does spam `ERROR ... Test failed!` in jmeter.log.
+Likely tied to the `CSVDataSet` (`recycle=false`, `stopThread=true`)
+signalling thread-stop concurrently with the engine's own controller
+traversal. Not investigated further since it doesn't affect results; flag
+if it starts showing up as an actual sample failure.

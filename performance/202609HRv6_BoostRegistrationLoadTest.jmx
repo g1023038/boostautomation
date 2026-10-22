@@ -194,6 +194,9 @@ import java.util.concurrent.ThreadLocalRandom
  *                            (re)generate a pool.
  *   dob=2000-01-01           fixed DOB (default; keeps the SMS bypass)
  *   dobStart / dobEnd        use a real range instead (needs real OTP flow)
+ *   idDobStart=1930-01-01    SA ID&#39;s OWN encoded birthdate range -- independent
+ *   idDobEnd=1950-12-31      of dob above, just keeps the ID itself looking like
+ *                            a real adult&#39;s instead of every ID starting &quot;000101&quot;
  *   gender=any               male | female | any
  *   citizen=0                0 = SA citizen, 1 = permanent resident
  *   csv=testusers.csv        output file (relative =&gt; JMeter bin dir)
@@ -224,6 +227,15 @@ boolean useRange   = (params.dob == null) &amp;&amp; (params.dobStart != null ||
 LocalDate dobFixed = LocalDate.parse((params.dob ?: &quot;2000-01-01&quot;), fmt)
 LocalDate dobStart = LocalDate.parse((params.dobStart ?: &quot;2000-01-01&quot;), fmt)
 LocalDate dobEnd   = LocalDate.parse((params.dobEnd   ?: &quot;2000-01-01&quot;), fmt)
+
+// The SA ID's OWN encoded birthdate is independent of the date_of_birth sent
+// to BOOOST above (which stays fixed at 2000-01-01 for the OTP bypass, same
+// format, unchanged) -- this just keeps the ID itself looking like a real
+// adult's instead of every single generated ID starting with the same
+// &quot;000101&quot; segment. idDobStart/idDobEnd default to a realistic 1930-1950
+// adult range.
+LocalDate idDobStart = LocalDate.parse((params.idDobStart ?: &quot;1930-01-01&quot;), fmt)
+LocalDate idDobEnd   = LocalDate.parse((params.idDobEnd   ?: &quot;1950-12-31&quot;), fmt)
 
 // ---- Name pools -------------------------------------------------------------
 def firstNames = [&quot;Thabo&quot;,&quot;Lerato&quot;,&quot;Sipho&quot;,&quot;Nomsa&quot;,&quot;Kagiso&quot;,&quot;Ayanda&quot;,&quot;Naledi&quot;,
@@ -278,11 +290,12 @@ def buildCell = { -&gt;
 // ---- Generate ---------------------------------------------------------------
 def profiles = []
 for (int i = 0; i &lt; count; i++) {
-    LocalDate dob = randomDob()
+    LocalDate dob   = randomDob()   // date_of_birth sent to BOOOST -- unchanged, still 2000-01-01 by default
+    LocalDate idDob = LocalDate.ofEpochDay(rnd.nextLong(idDobStart.toEpochDay(), idDobEnd.toEpochDay() + 1))   // SA ID's own encoded birthdate -- independent, realistic adult range
     String g  = (genderReq in [&quot;male&quot;,&quot;female&quot;]) ? genderReq : (rnd.nextBoolean() ? &quot;male&quot; : &quot;female&quot;)
     String fn = firstNames[rnd.nextInt(firstNames.size())]
     String ln = surnames[rnd.nextInt(surnames.size())]
-    String id = buildId(dob, g)
+    String id = buildId(idDob, g)
     String email = (fn + &quot;.&quot; + ln + rnd.nextInt(100000) + &quot;@loadtest.booost.com&quot;).toLowerCase().replace(&quot; &quot;, &quot;&quot;)
     profiles &lt;&lt; [ phone:buildCell(), id:id, dob:dob.format(fmt), first:fn, last:ln, email:email ]
 }
@@ -432,6 +445,35 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
               <stringProp name="JSONPostProcessor.defaultValues">false</stringProp>
             </JSONPostProcessor>
             <hashTree/>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Append to master registered-users CSV (already-registered path)">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="parameters">${__P(masterCsv,all_testusers.csv)}</stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">// This identity was ALREADY registered (registered==true here means
+// 03_Register below will be skipped) -- append it straight away, since
+// there's no later confirmation step to hook for this path. The
+// freshly-registered path is handled separately inside 03_Register.
+if (vars.get(&quot;registered&quot;) != &quot;true&quot;) {
+    return
+}
+String masterCsvName = (Parameters?.trim() ?: &quot;all_testusers.csv&quot;)
+File masterFile = new File(masterCsvName)
+if (!masterFile.isAbsolute()) masterFile = new File(System.getProperty(&quot;user.dir&quot;), masterCsvName)
+String row = &quot;${vars.get(&quot;phone_number&quot;)},${vars.get(&quot;sa_id&quot;)},${vars.get(&quot;date_of_birth&quot;)},${vars.get(&quot;first_name&quot;)},${vars.get(&quot;last_name&quot;)},${vars.get(&quot;email&quot;)}\n&quot;
+synchronized (props) {
+    boolean writeHeader = !masterFile.exists() || masterFile.length() == 0
+    def writer = new FileWriter(masterFile, true)
+    try {
+        if (writeHeader) writer.write(&quot;phone_number,sa_id,date_of_birth,first_name,last_name,email\n&quot;)
+        writer.write(row)
+    } finally {
+        writer.close()
+    }
+}
+</stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
             <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert HTTP 200" enabled="true">
               <collectionProp name="Asserion.test_strings">
                 <stringProp name="49586">200</stringProp>
@@ -516,6 +558,35 @@ log.info(&quot;Generated ${profiles.size()} users -&gt; ${csvFile.getAbsolutePat
                 <boolProp name="Assertion.assume_success">false</boolProp>
                 <intProp name="Assertion.test_type">1</intProp>
               </ResponseAssertion>
+              <hashTree/>
+              <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Append to master registered-users CSV (freshly-registered path)">
+                <stringProp name="cacheKey">true</stringProp>
+                <stringProp name="filename"></stringProp>
+                <stringProp name="parameters">${__P(masterCsv,all_testusers.csv)}</stringProp>
+                <stringProp name="scriptLanguage">groovy</stringProp>
+                <stringProp name="script">// Only append if /register itself actually succeeded -- checked directly
+// off the response code rather than trusting the ResponseAssertion above,
+// since post-processors run before assertions are evaluated.
+String code = prev.getResponseCode()
+if (code != &quot;200&quot; &amp;&amp; code != &quot;201&quot;) {
+    return
+}
+String masterCsvName = (Parameters?.trim() ?: &quot;all_testusers.csv&quot;)
+File masterFile = new File(masterCsvName)
+if (!masterFile.isAbsolute()) masterFile = new File(System.getProperty(&quot;user.dir&quot;), masterCsvName)
+String row = &quot;${vars.get(&quot;phone_number&quot;)},${vars.get(&quot;sa_id&quot;)},${vars.get(&quot;date_of_birth&quot;)},${vars.get(&quot;first_name&quot;)},${vars.get(&quot;last_name&quot;)},${vars.get(&quot;email&quot;)}\n&quot;
+synchronized (props) {
+    boolean writeHeader = !masterFile.exists() || masterFile.length() == 0
+    def writer = new FileWriter(masterFile, true)
+    try {
+        if (writeHeader) writer.write(&quot;phone_number,sa_id,date_of_birth,first_name,last_name,email\n&quot;)
+        writer.write(row)
+    } finally {
+        writer.close()
+    }
+}
+</stringProp>
+              </JSR223PostProcessor>
               <hashTree/>
             </hashTree>
           </hashTree>
