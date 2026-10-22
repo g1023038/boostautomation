@@ -330,3 +330,87 @@ Likely tied to the `CSVDataSet` (`recycle=false`, `stopThread=true`)
 signalling thread-stop concurrently with the engine's own controller
 traversal. Not investigated further since it doesn't affect results; flag
 if it starts showing up as an actual sample failure.
+
+## Datadog Backend Listener
+
+The jmx has a `Datadog Backend Listener` (`org.datadog.jmeter.plugins.DatadogBackendClient`,
+the official Datadog-maintained plugin) wired to push every sampler's results
+-- metrics, test-start/test-end events, and per-sample logs -- to Datadog in
+real time. `datadogUrl`/`logIntakeUrl` are set to the **EU** site
+(`datadoghq.eu`), confirmed correct for this org's dashboard
+(`app.datadoghq.eu/dashboard/ymz-xse-e75/boost-e2-e-canary-results`).
+
+**Setup required on any machine that doesn't have it yet** (the plugin jar
+isn't bundled with stock JMeter):
+
+1. Download the jar from Maven Central:
+   `https://repo1.maven.org/maven2/com/datadoghq/jmeter-datadog-backend-listener/1.0.0/jmeter-datadog-backend-listener-1.0.0-jar-with-dependencies.jar`
+   (Apache 2.0, source at `github.com/DataDog/jmeter-datadog-backend-listener`)
+   and drop it into `<jmeter-install>/lib/ext/`.
+2. Add your API key to `<jmeter-install>/bin/user.properties` as
+   `ddApiKey=<your real key>` -- never pass it on the command line or commit
+   it anywhere; `user.properties` is per-machine and auto-loaded by JMeter.
+   The key is write-only (submits data); reading data back via the API would
+   need a separate Application Key, which hasn't been set up.
+3. If you're behind a corporate TLS-inspecting proxy (confirmed Zscaler on
+   this network -- see the Docker section below for the exact fix), add a
+   `setenv.bat` in `<jmeter-install>/bin/` setting
+   `JVM_ARGS=-Djavax.net.ssl.trustStoreType=Windows-ROOT`. Without it every
+   HTTPS call (including the Datadog validate call) fails with
+   `PKIX path building failed`, which the plugin confusingly reports as
+   `Invalid apiKey` -- it's a TLS trust issue, not actually a bad key.
+
+Verified live (2026-10-22): registration run pushed a `JMeter Test Started`
+event, metrics batches, a `JMeter Test Ended` event, 144 final aggregate
+metrics, and per-sample logs, all confirmed accepted by Datadog (no
+Datadog-side errors in any push).
+
+## Distributed load via Docker (`docker/`)
+
+No JMeter master/slave (RMI) setup -- that coordination model is fragile
+across container/VPC network boundaries (dynamic ports, NAT'd hostnames,
+firewalls). Instead: N independent, uncoordinated JMeter containers, each
+running its own slice of the total load, with **Datadog as the aggregation
+point** (already wired up above) rather than JMeter's own distributed-mode
+reporting.
+
+- `docker/Dockerfile` -- JMeter 5.6.3 + the Datadog plugin + this jmx, built
+  from `performance/` as the context (`docker/build.ps1` does this
+  correctly: `docker build -f docker/Dockerfile -t boost-jmeter:local .`
+  from `performance/`) so the image always COPYs the real, current jmx --
+  no second copy to go stale.
+- `docker/corp-ca.crt` -- this network's Zscaler root CA (public certificate,
+  no secret), baked into both the OS trust store and the JVM's `cacerts`
+  during the image build. Without it, `apt`/`curl` during the build and
+  JMeter's own HTTPS calls at runtime both fail with the same PKIX error as
+  the host-side one above -- confirmed by hitting it first, before adding
+  this. If you're building this image from a different network, swap in
+  that network's own root CA (or drop the COPY/keytool steps entirely if
+  there's no interception).
+- `docker/entrypoint.sh` -- runs `jmeter -n -t test.jmx`, writes
+  `<label>.jtl` + `<label>.jmeter.log` to a mounted `/opt/jmeter-test/results`
+  volume, forwards `DD_API_KEY` (env var) to `-JddApiKey`, and forwards any
+  extra args straight to JMeter (e.g. `-JmixedUsers=50`).
+- `docker/run-distributed.ps1` -- launches N containers in parallel
+  (`docker run -d`, not sequential), splitting a total user count evenly
+  across them for a given thread-group property, waits for all to finish
+  (`docker wait`), reports each one's exit code, then cleans up (results
+  already on disk via the volume mount).
+
+**Known limitation, not yet solved:** every container currently mounts the
+*same* csv identity pool and reads from row 1 independently -- it doesn't
+slice the pool across containers. Fine for proving the mechanism (which is
+what's been verified so far); for a real distributed run you'd want each
+container reading a disjoint slice of a large registered-users pool (split
+`all_testusers.csv` into N chunks first). Revisit before running this with
+real volume.
+
+**Verified live (2026-10-22):** single container -- full registration flow
+(otp/verify/register/status, all 200/201) plus Datadog push, confirmed
+reachable through the corporate proxy from inside Docker. Then 2 containers
+launched in parallel via `run-distributed.ps1` against the same registered
+identity -- both exited 0, 26/26 samples succeeded in each (full Mixed
+Journey journey), both pushed to Datadog independently. Not yet run at real
+scale (tens of containers) or against AWS -- this was the "prove the
+mechanism locally first" stage; AWS (ECS Fargate, most likely) is the next
+step once a real multi-pool identity split is in place.
