@@ -194,8 +194,8 @@ import java.util.concurrent.ThreadLocalRandom
  *                            (re)generate a pool.
  *   dob=2000-01-01           fixed DOB (default; keeps the SMS bypass)
  *   dobStart / dobEnd        use a real range instead (needs real OTP flow)
- *   idDobStart=1930-01-01    SA ID&#39;s OWN encoded birthdate range -- independent
- *   idDobEnd=1950-12-31      of dob above, just keeps the ID itself looking like
+ *   idDobStart=1927-01-01    SA ID&#39;s OWN encoded birthdate range -- independent
+ *   idDobEnd=1930-12-31      of dob above, just keeps the ID itself looking like
  *                            a real adult&#39;s instead of every ID starting &quot;000101&quot;
  *   gender=any               male | female | any
  *   citizen=0                0 = SA citizen, 1 = permanent resident
@@ -232,10 +232,10 @@ LocalDate dobEnd   = LocalDate.parse((params.dobEnd   ?: &quot;2000-01-01&quot;)
 // to BOOOST above (which stays fixed at 2000-01-01 for the OTP bypass, same
 // format, unchanged) -- this just keeps the ID itself looking like a real
 // adult's instead of every single generated ID starting with the same
-// &quot;000101&quot; segment. idDobStart/idDobEnd default to a realistic 1930-1950
+// &quot;000101&quot; segment. idDobStart/idDobEnd default to a realistic 1927-1930
 // adult range.
-LocalDate idDobStart = LocalDate.parse((params.idDobStart ?: &quot;1930-01-01&quot;), fmt)
-LocalDate idDobEnd   = LocalDate.parse((params.idDobEnd   ?: &quot;1950-12-31&quot;), fmt)
+LocalDate idDobStart = LocalDate.parse((params.idDobStart ?: &quot;1927-01-01&quot;), fmt)
+LocalDate idDobEnd   = LocalDate.parse((params.idDobEnd   ?: &quot;1930-12-31&quot;), fmt)
 
 // ---- Name pools -------------------------------------------------------------
 def firstNames = [&quot;Thabo&quot;,&quot;Lerato&quot;,&quot;Sipho&quot;,&quot;Nomsa&quot;,&quot;Kagiso&quot;,&quot;Ayanda&quot;,&quot;Naledi&quot;,

@@ -266,7 +266,7 @@ name, email) and writes them to a CSV the main flow consumes via
 - SA ID numbers are built with a real Luhn-variant checksum, so they pass
   server-side validation as well-formed IDs.
 - The SA ID's own encoded birthdate (`idDobStart`/`idDobEnd`, default
-  1930-1950) is independent of the `date_of_birth` field actually sent to
+  1927-1930) is independent of the `date_of_birth` field actually sent to
   BOOOST -- this keeps the ID itself looking like a real adult's instead of
   every single generated ID starting with the same `000101` segment.
 - DOB sent to the API is fixed at `2000-01-01` by default specifically
