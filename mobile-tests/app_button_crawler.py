@@ -2,15 +2,40 @@
 Button crawler for the Boost app (Android, LambdaTest real devices).
 
 Logs in once via boost_actions.action_login, then from the post-login home
-screen it finds every clickable element, clicks each one, and records what
-happened. Whenever a click opens a NEW screen, that screen is queued and
-crawled the same way (breadth-first), so it eventually visits every screen
-reachable by tapping from Home.
+screen it SCROLLS through the full length of every screen (not just what's
+visible without scrolling -- Android lazy-renders list content, so a single
+snapshot misses anything below the fold) and clicks every clickable element
+it finds, recording what happened. Whenever a click opens a NEW screen, that
+screen is queued and crawled the same way (breadth-first), so it discovers
+screens you don't already know about, not just ones you point it at.
 
 How it gets back to a screen: it restarts the app and replays the taps that
 led there (the "path"), re-logging in first if the restart actually landed
 back on the login screen (see ensure_logged_in). Slower than pressing Back,
-but much more reliable.
+but much more reliable. Combined with the full-screen scroll before every
+click, a real run is noticeably slow -- that's the trade for thoroughness.
+
+What "all" does NOT cover, on purpose or by real limitation -- read this
+before trusting a clean report as exhaustive:
+  - MAX_DEPTH (default 6): screens more than 6 taps from Home aren't
+    reached at all.
+  - MAX_ACTIONS (default 400): hard stop on total clicks for the whole run;
+    a large app can exceed this before finishing.
+  - SKIP_WORDS: anything labelled delete/logout/pay/purchase/checkout/
+    withdraw/redeem/convert/cash out/etc. is deliberately NOT clicked (see
+    below) -- so whatever screen sits behind one of those stays
+    undiscovered. That's intentional, not a bug.
+  - Only elements Android's accessibility tree marks clickable=true are
+    found. Custom gesture-only UI (swipe carousels, long-press, drag-to-
+    reorder, raw Canvas/WebView content) won't be seen or triggered.
+  - Only the login form gets real typed input (via action_login). Any other
+    screen gated behind filling in a field before something becomes usable
+    won't be explored past that point.
+  - Screens whose content changes between visits (e.g. a feed with new
+    items) can get mistaken for a "new" screen each time, since the
+    fingerprint is a hash of what's currently on screen.
+Tune MAX_DEPTH/MAX_ACTIONS/SKIP_WORDS at the top of this file if these
+defaults don't fit a given run.
 
 IMPORTANT -- OTP rate limit: the real API allows 3 OTP requests per phone
 number per hour (confirmed in the JMeter performance work, see
@@ -48,8 +73,8 @@ from appium.webdriver.common.appiumby import AppiumBy
 from boost_actions import APP_ID, HUB_URL, action_login, tap_by_text
 
 # ---------------- CONFIG ----------------
-MAX_DEPTH = 6              # how many taps deep to go from the home screen
-MAX_ACTIONS = 400          # hard stop so a run can't go forever
+MAX_DEPTH = 12             # how many taps deep to go from the home screen
+MAX_ACTIONS = 1500         # hard stop so a run can't go forever
 MAX_LOGIN_ATTEMPTS = 2     # hard stop on real (OTP-consuming) re-logins -- see module docstring
 WAIT_AFTER_CLICK = 1.5     # seconds to let the screen settle after a tap
 WAIT_AFTER_LAUNCH = 3.0
@@ -173,18 +198,87 @@ def xpath_for(sig):
     return xp
 
 
+# ---------------- SCROLLING ----------------
+# Android lazy-renders list/scroll content: anything below the fold simply
+# isn't in page_source yet, so a single snapshot() only ever sees what's
+# currently on screen. Everything below scrolls the full length of the
+# screen to find every clickable element, not just the ones visible without
+# scrolling -- this is the actual "scrolls the app" half of the crawler.
+
+def _swipe(driver, direction):
+    size = driver.get_window_size()
+    w, h = size["width"], size["height"]
+    before = driver.page_source
+    driver.execute_script("mobile: swipeGesture", {
+        "left": int(w * 0.1), "top": int(h * 0.2),
+        "width": int(w * 0.8), "height": int(h * 0.6),
+        "direction": direction, "percent": 0.9,
+    })
+    time.sleep(0.8)
+    return driver.page_source != before
+
+
+def scroll_down(driver):
+    """Reveals lower content. Returns True if anything actually moved."""
+    return _swipe(driver, "up")
+
+
+def scroll_to_top(driver, max_swipes=15):
+    for _ in range(max_swipes):
+        if not _swipe(driver, "down"):
+            break
+
+
+def collect_all_elements(driver, app_id, max_scrolls=15):
+    """Scroll from the top of the current screen all the way down,
+    accumulating every distinct clickable element seen at any scroll
+    position. Returns (elements, fingerprint) -- the fingerprint covers the
+    whole scrollable screen, not just one viewport, so it stays comparable
+    between an initial visit and a post-click re-check (both scroll the
+    full length the same way)."""
+    scroll_to_top(driver)
+    seen, all_elements, sig_parts = set(), [], []
+    for _ in range(max_scrolls):
+        elements, _ = snapshot(driver, app_id)
+        for el in elements:
+            has_id = any(el["sig"][1:])
+            dedupe_key = el["sig"] if has_id else (el["sig"], el["occ"])
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            all_elements.append(el)
+            sig_parts.append(str(el["sig"]))
+        if not scroll_down(driver):
+            break
+    raw = driver.current_activity + "|" + "|".join(sorted(sig_parts))
+    fp = hashlib.md5(raw.encode()).hexdigest()
+    return all_elements, fp
+
+
+def scroll_into_view_and_find(driver, sig, occ, max_scrolls=15):
+    """The element may be below the fold after returning to a screen
+    (restart + path replay always lands back at the top) -- scroll down
+    step by step, re-checking after each one, until it's actually
+    rendered."""
+    scroll_to_top(driver)
+    for _ in range(max_scrolls):
+        els = driver.find_elements(AppiumBy.XPATH, xpath_for(sig))
+        if len(els) > occ:
+            return els[occ]
+        if not scroll_down(driver):
+            break
+    return None
+
+
 # ---------------- ACTIONS ----------------
 def click_step(driver, step):
-    """Click the element described by step. Returns a note on how it was clicked."""
-    els = driver.find_elements(AppiumBy.XPATH, xpath_for(step["sig"]))
-    if len(els) > step["occ"]:
-        els[step["occ"]].click()  # real click: fails if not clickable
-        note = "clicked"
-    else:
-        driver.tap([step["center"]])  # element moved/renamed: tap its last position
-        note = "tapped by position"
+    """Scroll the element described by step into view and click it."""
+    el = scroll_into_view_and_find(driver, step["sig"], step["occ"])
+    if el is None:
+        raise RuntimeError(f"could not scroll {step['label']!r} into view")
+    el.click()  # real click: fails if not actually clickable
     time.sleep(WAIT_AFTER_CLICK)
-    return note
+    return "clicked"
 
 
 def go_to(driver, app_id, state, path):
@@ -219,7 +313,7 @@ def crawl():
         print("App:", app_id)
 
         ensure_logged_in(driver, state)
-        _, fp0 = snapshot(driver, app_id)
+        _, fp0 = collect_all_elements(driver, app_id)
         screens = {fp0: "S0"}
         driver.get_screenshot_as_file(f"{SCREEN_DIR}/S0.png")
         queue = deque([([], "S0")])
@@ -232,7 +326,7 @@ def crawl():
             if not go_to(driver, app_id, state, path):
                 results.append([screen, "-", "UNREACHABLE", "could not replay path", ""])
                 continue
-            elements, here_fp = snapshot(driver, app_id)
+            elements, here_fp = collect_all_elements(driver, app_id)
             on_screen = True
 
             for el in elements:
@@ -262,7 +356,7 @@ def crawl():
                         status, detail = "LEFT_APP", "app closed/crashed or opened another app"
                         failed += 1
                     else:
-                        _, new_fp = snapshot(driver, app_id)
+                        _, new_fp = collect_all_elements(driver, app_id)
                         if new_fp == here_fp:
                             status, detail = "OK", f"{note}, screen unchanged"
                             on_screen = True

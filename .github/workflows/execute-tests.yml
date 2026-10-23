@@ -5,6 +5,12 @@ name: Execute tests and publish results
 on:
   push:
     branches: [main]
+    paths:
+      - "api-tests/**"
+      - "app-tests/**"
+      - "mobile-tests/**"
+      - "scripts/**"
+      - ".github/workflows/execute-tests.yml"
 
 permissions:
   contents: read
