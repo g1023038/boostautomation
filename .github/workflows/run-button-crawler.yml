@@ -1,0 +1,30 @@
+name: Run Boost app button crawler
+
+on:
+  workflow_dispatch:
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+        working-directory: mobile-tests
+      - run: python app_button_crawler.py
+        working-directory: mobile-tests
+        env:
+          LT_USERNAME: ${{ secrets.LAMBDATEST_USERNAME }}
+          LT_ACCESS_KEY: ${{ secrets.LAMBDATEST_ACCESS_KEY }}
+          TEST_ID_NUMBER: ${{ secrets.TEST_ID_NUMBER }}
+          TEST_PHONE_LOCAL: ${{ secrets.TEST_PHONE_LOCAL }}
+          TEST_OTP: ${{ secrets.TEST_OTP }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: button-crawl-report
+          path: |
+            mobile-tests/crawl_report.csv
+            mobile-tests/screens/
